@@ -1,6 +1,6 @@
 # 🔌 Port Checker Plus 🎉
 
-**Port Checker Plus** is a **user-friendly, customizable, and colorful GUI tool** for scanning ports on any host! Built with 💙 Python and Tkinter, it's perfect for network tinkerers, sysadmins, and anyone curious about what's open or not on a server!
+**Port Checker Plus** is a **user-friendly, customizable GUI tool** for scanning ports on any host! Built with 💙 Python and Tkinter, it's perfect for network tinkerers, sysadmins, and anyone curious about what's open or not on a server!
 
 ---
 
