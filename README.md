@@ -1,96 +1,101 @@
-# 🔌 Port Checker Plus 🎉
+# 🔌 Port Checker Plus
 
-**Port Checker Plus** is a **user-friendly, customizable GUI tool** for scanning ports on any host! Built with 💙 Python and Tkinter, it's perfect for network tinkerers, sysadmins, and anyone curious about what's open or not on a server!
+> **Port Checker Plus** is a sleek, GUI-based port scanning tool designed for developers, sysadmins, and network enthusiasts who want quick insights into open ports on a target host — all in a visually intuitive and exportable way!
 
 ---
 
-## ✨ Features
+## 🎯 Features
 
-- 🔍 **Scan any host and port range** (e.g. `1-100`, `22,80,443`)
-- 🟢 **Only Show Open Ports** with a simple checkbox
-- 🗂️ **Export Results** to a `.txt` file with timestamps
-- ⚙️ **Settings Panel** with:
-  - Customizable default host and ports
-  - Adjustable timeout (now with a compact UI 😉)
-  - Export directory selection
-- 🎨 Clean and compact **Tkinter GUI**
+- 🖥️ **User-friendly GUI** built with `Tkinter`
+- ⚡ **Multi-threaded scanning** for fast performance
+- 🌐 **Resolve hostnames** before scanning
+- 🎯 **Input custom ports or ranges** (e.g., `22,80,1000-1010`)
+- 🧩 **Filter results** to show only open ports
+- 📁 **Export results** to a text file
+- 💾 **Save settings** (including default host, ports, timeout, and export preferences)
+- ❌ **Cancel unsaved changes** in settings easily
 
 ---
 
 ## 🚀 Getting Started
 
-### ✅ Prerequisites
+### 🔧 Requirements
 
-- Python 3.x
-- No external dependencies!
+- Python 3.8+
+- No additional libraries — everything is in the standard library!
 
 ### 📦 Installation
 
 ```bash
-git clone https://github.com/jackworthen/port-checker-plus.git
+git clone https://github.com/yourusername/port-checker-plus.git
 cd port-checker-plus
 python portCheckerPlus.py
 ```
 
 ---
 
-## 🛠 Usage
+## ⚙️ Configuration
 
-1. Enter the **host** and **port range**.
-2. Click **Check Ports**.
-3. View colorful results in real-time.
-4. Toggle **Only Show Open Ports** or **Export Results** from the Settings menu.
+The application automatically creates a `config.json` file to store your preferences. You can modify this file manually or through the GUI settings window.
 
----
-
-## 🧠 Example Inputs
-
-- **Host**: `localhost` or `example.com`
-- **Ports**: `20-25,80,443` or `1-1024`
-
----
-
-## 📁 Exported Results
-
-If enabled, results are saved to the chosen directory as:
-```
-scan_results_YYYYMMDD_HHMMSS.txt
-```
-
----
-
-## 💡 Customization
-
-The app remembers your preferences using a simple `config.json` file:
+Example:
 ```json
 {
   "timeout": 0.3,
-  "export_results": true,
+  "export_results": false,
   "export_directory": "",
-  "show_open_only": true,
+  "show_open_only": false,
   "default_host": "localhost",
-  "default_ports": "1-1024"
+  "default_ports": "1433"
 }
 ```
 
 ---
 
-## 🤖 Future Ideas
+## 🧪 How to Use
 
-- 🔄 Async scanning
-- 🌐 Domain resolution and IP info
-- 📊 Port usage stats visualization
-
----
-
-## 🧑‍💻 Author
-
-Made with ❤️ by **Jack Worthen**
-
-> Contributions welcome! Fork it, star it, and scan responsibly!
+1. Enter a hostname or IP (e.g., `localhost`, `192.168.1.1`)
+2. Specify ports (e.g., `22,80,443` or ranges like `1000-1100`)
+3. Click **Check Ports**
+4. View results and optionally export them to a file
+5. Use the **Settings** menu to tweak app behavior
 
 ---
 
-## 📜 License
+## 🧰 Developer Notes
 
-MIT License — use it, share it, break it (gently) 💥
+- All port scanning is done using Python’s `socket` module.
+- Threads allow non-blocking scanning for large ranges.
+- GUI built entirely with `Tkinter`, compatible across platforms.
+
+---
+
+## 🤝 Contributing
+
+Contributions, ideas, and feature requests are welcome!
+
+1. Fork the repo
+2. Create a new branch (`git checkout -b feature/fooBar`)
+3. Commit your changes
+4. Push to the branch (`git push origin feature/fooBar`)
+5. Create a new Pull Request
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+
+---
+
+## 💬 Acknowledgments
+
+- Python community ❤️
+- Tkinter for the UI toolkit
+- All testers and contributors!
+
+---
+
+### 🚨 Disclaimer
+
+This tool is intended for **educational and authorized use only**. Do not scan hosts you do not own or have permission to test.
