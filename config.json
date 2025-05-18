@@ -1,6 +1,6 @@
 {
     "timeout": 0.3,
-    "export_results": true,
+    "export_results": false,
     "export_directory": "",
     "show_open_only": true,
     "default_host": "localhost",
