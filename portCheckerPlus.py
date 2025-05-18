@@ -134,7 +134,6 @@ def resolve_hostname_and_print(host, output_widget):
         messagebox.showerror("DNS Error", f"Could not resolve host: {host}")
         return None
 
-
 file_lock = threading.Lock()
 
 def get_export_file_path(config):
