@@ -5,8 +5,21 @@ from tkinter import messagebox, scrolledtext, filedialog, Menu
 import json
 import os
 from datetime import datetime
+import platform
+from pathlib import Path
 
-CONFIG_PATH = "config.json"
+def get_config_path():
+    if platform.system() == "Windows":
+        base = Path(os.getenv("APPDATA", os.getcwd()))
+    elif platform.system() == "Darwin":
+        base = Path.home() / "Library" / "Application Support"
+    else:
+        base = Path.home() / ".config"
+    config_dir = base / "PortCheckerPlus"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    return config_dir / "config.json"
+
+CONFIG_PATH = str(get_config_path())
 default_config = {
     "timeout": 0.3,
     "export_results": False,
@@ -22,12 +35,14 @@ def load_config():
                 return json.load(f)
         except json.JSONDecodeError:
             pass
+    # Write default config if file doesn't exist or is invalid
+    with open(CONFIG_PATH, "w") as f:
+        json.dump(default_config, f, indent=4)
     return default_config.copy()
 
 def save_config(config):
     with open(CONFIG_PATH, "w") as f:
         json.dump(config, f, indent=4)
-
 
 def parse_ports(port_input):
     ports = []
@@ -53,7 +68,6 @@ def parse_ports(port_input):
             except ValueError:
                 continue
     return ports
-
 
 def open_settings_window(root, config):
     settings_win = tk.Toplevel(root)
@@ -181,9 +195,7 @@ def resolve_hostname_and_print(host, output_widget):
 file_lock = threading.Lock()
 
 def get_export_file_path(config):
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"scan_results_{timestamp}.txt"
-    return os.path.join(config["export_directory"], filename)
+    return os.path.join(config["export_directory"], "psp_log.txt")
 
 def scan_port_with_export(host, port, output_widget, config, export_file_path):
     try:
@@ -201,7 +213,7 @@ def scan_port_with_export(host, port, output_widget, config, export_file_path):
             if config.get("export_results", False):
                 os.makedirs(os.path.dirname(export_file_path), exist_ok=True)
                 with file_lock:
-                    with open(export_file_path, "a") as f:
+                    with open(config.get("_current_export_file", export_file_path), "a") as f:
                         f.write(message)
     except Exception as e:
         error_msg = f"Error on port {port}: {e}\n"
@@ -209,16 +221,29 @@ def scan_port_with_export(host, port, output_widget, config, export_file_path):
         if config.get("export_results", False):
             os.makedirs(os.path.dirname(export_file_path), exist_ok=True)
             with file_lock:
-                with open(export_file_path, "a") as f:
+                with open(config.get("_current_export_file", export_file_path), "a") as f:
                     f.write(error_msg)
 
 def check_ports_threaded_with_export(host, ports, output_widget, clear_button, config):
     clear_button.config(state=tk.NORMAL)
     export_file_path = get_export_file_path(config) if config.get("export_results") else None
+
+    remaining = len(ports)
+    counter = {"count": 0}
+    counter_lock = threading.Lock()
+
+    def on_port_done():
+        with counter_lock:
+            counter["count"] += 1
+            if counter["count"] == remaining:
+                output_widget.after(0, lambda: output_widget.insert(tk.END, f"\nScan complete.\nNumber of ports checked:{remaining}"))
+
     for port in ports:
         threading.Thread(
-            target=scan_port_with_export,
-            args=(host, port, output_widget, config, export_file_path),
+            target=lambda p=port: (
+                scan_port_with_export(host, p, output_widget, config, export_file_path),
+                on_port_done()
+            ),
             daemon=True
         ).start()
 
@@ -258,6 +283,18 @@ def on_check_ports_with_export():
 
     root.output_text.delete("1.0", tk.END)
     resolved_ip = resolve_hostname_and_print(host, root.output_text)
+    if resolved_ip and config.get("export_results"):
+        export_file_path = get_export_file_path(config)
+        try:
+            with open(export_file_path, "a") as f:
+                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                f.write("\n" + "=" * 5 + ("Scan Results: {}".format(timestamp) + "=" * 5 + "\n"))
+               
+                #f.write("Scan Results - {}\n".format(timestamp))
+                f.write("Host: {}\n".format(host))
+                f.write("Resolved IP: {}\n\n".format(resolved_ip))
+        except Exception as e:
+            messagebox.showerror("File Error", "Could not write export file: {}".format(e))
     if not resolved_ip:
         return
 
@@ -272,7 +309,6 @@ def on_check_ports_with_export():
         root.clear_button.config(state=tk.NORMAL)
     except Exception as e:
         messagebox.showerror("Error", str(e))
-
 def on_clear_output():
 
     root.output_text.delete("1.0", tk.END)
