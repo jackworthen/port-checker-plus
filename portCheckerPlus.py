@@ -28,10 +28,37 @@ def save_config(config):
     with open(CONFIG_PATH, "w") as f:
         json.dump(config, f, indent=4)
 
+
+def parse_ports(port_input):
+    ports = []
+    seen = set()
+    parts = port_input.split(",")
+    for part in parts:
+        part = part.strip()
+        if '-' in part:
+            try:
+                start, end = map(int, part.split('-'))
+                for p in range(start, end + 1):
+                    if p not in seen:
+                        seen.add(p)
+                        ports.append(p)
+            except ValueError:
+                continue
+        else:
+            try:
+                p = int(part)
+                if p not in seen:
+                    seen.add(p)
+                    ports.append(p)
+            except ValueError:
+                continue
+    return ports
+
+
 def open_settings_window(root, config):
     settings_win = tk.Toplevel(root)
     settings_win.title("Settings")
-    settings_win.geometry("450x370")
+    settings_win.geometry("450x350")
     settings_win.configure(bg="#f0f0f0")
     settings_win.transient(root)
     settings_win.grab_set()
@@ -102,10 +129,18 @@ def open_settings_window(root, config):
             config["default_host"] = host_entry.get().strip()
             config["default_ports"] = ports_entry.get().strip()
 
+            # Validate default ports
+            port_input = config["default_ports"]
+            parsed_ports = parse_ports(port_input)
+            invalid_ports = [p for p in parsed_ports if p > 65535]
+            if invalid_ports:
+                messagebox.showerror("Error", f"The following ports are invalid: {invalid_ports}\n\nValid port range: 0-65535")
+                return
+
             if export_var.get():
                 export_path = dir_entry.get().strip()
                 if not export_path:
-                    messagebox.showerror("Validation Error", "Please select a directory for export.")
+                    messagebox.showerror("Error", "Please select a directory for export.")
                     return
                 config["export_directory"] = export_path
 
@@ -120,8 +155,17 @@ def open_settings_window(root, config):
         except ValueError:
             messagebox.showerror("Invalid Input", "Timeout must be a number.")
 
-    save_btn = tk.Button(settings_win, text="Save", font=("Segoe UI", 10), command=on_save)
-    save_btn.pack(pady=15)
+    save_cancel_frame = tk.Frame(settings_win, bg="#f0f0f0")
+    save_cancel_frame.pack(pady=15)
+
+    def on_cancel():
+        settings_win.destroy()
+
+    save_btn = tk.Button(save_cancel_frame, text="Save", font=("Segoe UI", 10), command=on_save)
+    save_btn.pack(side="left", padx=(0, 10))
+
+    cancel_btn = tk.Button(save_cancel_frame, text="Cancel", font=("Segoe UI", 10), command=on_cancel)
+    cancel_btn.pack(side="left")
 
 
 def resolve_hostname_and_print(host, output_widget):
