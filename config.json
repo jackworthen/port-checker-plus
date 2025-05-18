@@ -4,5 +4,5 @@
     "export_directory": "",
     "show_open_only": true,
     "default_host": "localhost",
-    "default_ports": ""
+    "default_ports": "1-5000"
 }

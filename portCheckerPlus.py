@@ -39,15 +39,15 @@ def open_settings_window(root, config):
     def label(master, text):
         return tk.Label(master, text=text, bg="#f0f0f0", font=("Segoe UI", 10))
 
-    export_var = tk.BooleanVar(value=config.get("export_results", False))
-    export_check = tk.Checkbutton(settings_win, text="Export Results", variable=export_var,
-                                   bg="#f0f0f0", font=("Segoe UI", 10))
-    export_check.pack(anchor="w", padx=12, pady=(12, 0))
-
     show_open_only_var = tk.BooleanVar(value=config.get("show_open_only", False))
     show_open_only_check = tk.Checkbutton(settings_win, text="Only Show Open Ports", variable=show_open_only_var,
                                           bg="#f0f0f0", font=("Segoe UI", 10))
     show_open_only_check.pack(anchor="w", padx=12)
+
+    export_var = tk.BooleanVar(value=config.get("export_results", False))
+    export_check = tk.Checkbutton(settings_win, text="Export Results", variable=export_var,
+                                   bg="#f0f0f0", font=("Segoe UI", 10))
+    export_check.pack(anchor="w", padx=12)
 
     label(settings_win, "Export Directory:").pack(anchor="w", padx=12, pady=(12, 0))
     dir_frame = tk.Frame(settings_win, bg="#f0f0f0")
@@ -120,8 +120,20 @@ def open_settings_window(root, config):
         except ValueError:
             messagebox.showerror("Invalid Input", "Timeout must be a number.")
 
-    save_btn = tk.Button(settings_win, text="Save Settings", font=("Segoe UI", 10), command=on_save)
+    save_btn = tk.Button(settings_win, text="Save", font=("Segoe UI", 10), command=on_save)
     save_btn.pack(pady=15)
+
+
+def resolve_hostname_and_print(host, output_widget):
+    try:
+        output_widget.insert(tk.END, f"Resolving hostname: {host}\n")
+        resolved_ip = socket.gethostbyname(host)
+        output_widget.insert(tk.END, f"Resolved IP: {resolved_ip}\n\n")
+        return resolved_ip
+    except socket.gaierror:
+        messagebox.showerror("DNS Error", f"Could not resolve host: {host}")
+        return None
+
 
 file_lock = threading.Lock()
 
@@ -193,6 +205,7 @@ def parse_ports(port_input):
     return ports
 
 def on_check_ports_with_export():
+    config = load_config()
     host = root.host_entry.get().strip()
     port_input = root.ports_entry.get().strip()
 
@@ -200,11 +213,14 @@ def on_check_ports_with_export():
         messagebox.showwarning("Input Error", "Please enter both host and port(s).")
         return
 
+    root.output_text.delete("1.0", tk.END)
+    resolved_ip = resolve_hostname_and_print(host, root.output_text)
+    if not resolved_ip:
+        return
+
     try:
         ports = parse_ports(port_input)
-        root.output_text.delete("1.0", tk.END)
         root.clear_button.config(state=tk.DISABLED)
-        config = load_config()
         threading.Thread(
             target=check_ports_threaded_with_export,
             args=(host, ports, root.output_text, root.clear_button, config),
@@ -215,6 +231,7 @@ def on_check_ports_with_export():
         messagebox.showerror("Error", str(e))
 
 def on_clear_output():
+
     root.output_text.delete("1.0", tk.END)
     root.clear_button.config(state=tk.DISABLED)
 
