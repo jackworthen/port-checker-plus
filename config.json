@@ -1,8 +1,0 @@
-{
-    "timeout": 0.3,
-    "export_results": false,
-    "export_directory": "",
-    "show_open_only": false,
-    "default_host": "localhost",
-    "default_ports": "1433"
-}
