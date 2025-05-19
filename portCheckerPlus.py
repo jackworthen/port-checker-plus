@@ -350,11 +350,11 @@ def run_gui():
 
     menubar = Menu(root)
     file_menu = Menu(menubar, tearoff=0)
-    file_menu.add_command(label="Exit", command=root.quit)
+    file_menu.add_command(label="⏻ Exit", command=root.quit)
     menubar.add_cascade(label="File", menu=file_menu)
 
     view_menu = Menu(menubar, tearoff=0)
-    view_menu.add_command(label="Settings", command=lambda: open_settings_window(root, config))
+    view_menu.add_command(label="🔧 Settings", command=lambda: open_settings_window(root, config))
     menubar.add_cascade(label="View", menu=view_menu)
     root.config(menu=menubar)
 
