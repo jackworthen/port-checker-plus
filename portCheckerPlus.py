@@ -227,18 +227,26 @@ def scan_port_with_export(host, port, output_widget, config, export_file_path):
             sock.settimeout(config.get("timeout", 0.3))
             result = sock.connect_ex((host, port))
             status = "OPEN" if result == 0 else "CLOSED"
-            message = f"Port {port} is {status}\n"
 
-            if config.get("show_open_only", False) and status != "OPEN":
-                return
-            output_widget.after(0, lambda: output_widget.insert(
-                tk.END, message, "open" if status == "OPEN" else None))
+        try:
+            service = socket.getservbyport(port)
+        except:
+            service = 'Unknown'
 
-            if config.get("export_results", False):
-                os.makedirs(os.path.dirname(export_file_path), exist_ok=True)
-                with file_lock:
-                    with open(config.get("_current_export_file", export_file_path), "a") as f:
-                        f.write(message)
+        message = f"Port {port} is {status} (Service: {service})\n"
+
+        if config.get("show_open_only", False) and status != "OPEN":
+            return
+
+        output_widget.after(0, lambda: output_widget.insert(
+            tk.END, message, "open" if status == "OPEN" else None))
+
+        if config.get("export_results", False):
+            os.makedirs(os.path.dirname(export_file_path), exist_ok=True)
+            with file_lock:
+                with open(config.get("_current_export_file", export_file_path), "a") as f:
+                    f.write(message)
+
     except Exception as e:
         error_msg = f"Error on port {port}: {e}\n"
         output_widget.after(0, lambda: output_widget.insert(tk.END, error_msg))
@@ -247,6 +255,7 @@ def scan_port_with_export(host, port, output_widget, config, export_file_path):
             with file_lock:
                 with open(config.get("_current_export_file", export_file_path), "a") as f:
                     f.write(error_msg)
+
 
 def check_ports_threaded_with_export(host, ports, output_widget, clear_button, config):
     clear_button.config(state=tk.NORMAL)
