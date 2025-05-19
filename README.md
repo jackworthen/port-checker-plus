@@ -36,7 +36,7 @@ python portCheckerPlus.py
 
 ## ⚙️ Configuration
 
-The application automatically creates a `config.json` file to store your preferences. You can modify this file manually or through the GUI settings window.
+The application stores settings in  `config.json`. You can modify the behavior through the GUI settings window.
 
 Example:
 ```json
