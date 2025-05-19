@@ -289,10 +289,9 @@ def on_check_ports_with_export():
             with open(export_file_path, "a") as f:
                 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 f.write("\n" + "=" * 5 + ("Scan Results: {}".format(timestamp) + "=" * 5 + "\n"))
-               
-                #f.write("Scan Results - {}\n".format(timestamp))
                 f.write("Host: {}\n".format(host))
-                f.write("Resolved IP: {}\n\n".format(resolved_ip))
+                f.write("Resolved IP: {}\n".format(resolved_ip))
+                f.write("Ports: {}\n\n".format(port_input))
         except Exception as e:
             messagebox.showerror("File Error", "Could not write export file: {}".format(e))
     if not resolved_ip:
