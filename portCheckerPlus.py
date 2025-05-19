@@ -8,6 +8,17 @@ from datetime import datetime
 import platform
 from pathlib import Path
 
+import sys
+
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        base_path = sys._MEIPASS  # Set by PyInstaller
+    except AttributeError:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
+
 def get_config_path():
     if platform.system() == "Windows":
         base = Path(os.getenv("APPDATA", os.getcwd()))
@@ -317,6 +328,9 @@ def run_gui():
     global root
     config = load_config()
     root = tk.Tk()
+    icon_path = resource_path("psp_icon.ico")
+    if os.path.exists(icon_path):
+        root.iconbitmap(default=icon_path)
     root.title("Port Checker Plus")
     root.configure(bg="#f8f8f8")
     root.geometry("600x450")
