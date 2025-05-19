@@ -36,7 +36,8 @@ default_config = {
     "export_results": False,
     "export_directory": os.getcwd(),
     "default_host": "",
-    "default_ports": ""
+    "default_ports": "",
+    "retry_count": 2
 }
 
 def load_config():
@@ -83,7 +84,7 @@ def parse_ports(port_input):
 def open_settings_window(root, config):
     settings_win = tk.Toplevel(root)
     settings_win.title("Settings")
-    settings_win.geometry("450x350")
+    settings_win.geometry("450x400")
     settings_win.configure(bg="#f0f0f0")
     settings_win.transient(root)
     settings_win.grab_set()
@@ -135,7 +136,12 @@ def open_settings_window(root, config):
     timeout_spin.delete(0, tk.END)
     timeout_spin.insert(0, str(config.get("timeout", 0.3)))
     timeout_spin.pack(side="left")
-
+    
+    label(settings_win, "DNS Retry Count:").pack(anchor="w", padx=12, pady=(12, 0))
+    retry_spin = tk.Spinbox(settings_win, from_=0, to=5, width=5, font=("Segoe UI", 9))
+    retry_spin.delete(0, tk.END)
+    retry_spin.insert(0, str(config.get("retry_count", 2)))
+    retry_spin.pack(anchor="w", padx=12)
     label(settings_win, "Default Host:").pack(anchor="w", padx=12, pady=(12, 0))
     host_entry = tk.Entry(settings_win, font=("Segoe UI", 10))
     host_entry.insert(0, config.get("default_host", ""))
@@ -152,6 +158,7 @@ def open_settings_window(root, config):
             config["export_results"] = export_var.get()
             config["show_open_only"] = show_open_only_var.get()
             config["default_host"] = host_entry.get().strip()
+            config["retry_count"] = int(retry_spin.get())
             config["default_ports"] = ports_entry.get().strip()
 
             # Validate default ports
@@ -193,15 +200,21 @@ def open_settings_window(root, config):
     cancel_btn.pack(side="left")
 
 
-def resolve_hostname_and_print(host, output_widget):
-    try:
-        output_widget.insert(tk.END, f"Resolving hostname: {host}\n")
-        resolved_ip = socket.gethostbyname(host)
-        output_widget.insert(tk.END, f"Resolved IP: {resolved_ip}\n\n")
-        return resolved_ip
-    except socket.gaierror:
-        messagebox.showerror("DNS Error", f"Could not resolve host: {host}")
-        return None
+
+def resolve_hostname_and_print(host, output_widget, config):
+    retries = config.get("retry_count", 2)
+    for attempt in range(retries + 1):
+        try:
+            output_widget.insert(tk.END, f"Resolving hostname: {host}\n")
+            resolved_ip = socket.gethostbyname(host)
+            output_widget.insert(tk.END, f"Resolved IP: {resolved_ip}\n")
+            output_widget.insert(tk.END, f"Attempt: {attempt + 1}\n\n")
+            return resolved_ip
+        except socket.gaierror as e:
+            if attempt == retries:
+                messagebox.showerror("DNS Error", f"Could not resolve host: {host}{e}")
+                return None
+                time.sleep(0.5)
 
 file_lock = threading.Lock()
 
@@ -293,7 +306,7 @@ def on_check_ports_with_export():
         return
 
     root.output_text.delete("1.0", tk.END)
-    resolved_ip = resolve_hostname_and_print(host, root.output_text)
+    resolved_ip = resolve_hostname_and_print(host, root.output_text, config)
     if resolved_ip and config.get("export_results"):
         export_file_path = get_export_file_path(config)
         try:
