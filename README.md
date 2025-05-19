@@ -1,101 +1,113 @@
-# 🔌 Port Checker Plus
+# 🚀 Port Checker Plus
 
-> **Port Checker Plus** is a sleek, GUI-based port scanning tool designed for developers, sysadmins, and network enthusiasts who want quick insights into open ports on a target host — all in a visually intuitive and exportable way!
-
----
-
-## 🎯 Features
-
-- 🖥️ **User-friendly GUI** built with `Tkinter`
-- ⚡ **Multi-threaded scanning** for fast performance
-- 🌐 **Resolve hostnames** before scanning
-- 🎯 **Input custom ports or ranges** (e.g., `22,80,1000-1010`)
-- 🧩 **Filter results** to show only open ports
-- 📁 **Export results** to a text file
-- 💾 **Save settings** (including default host, ports, timeout, and export preferences)
-- ❌ **Cancel unsaved changes** in settings easily
+Port Checker Plus is a sleek, user-friendly GUI application built in Python for scanning and resolving TCP ports on any host. Featuring multi-threading, exportable results, and platform-aware configuration storage, it’s perfect for network admins and enthusiasts alike!
 
 ---
 
-## 🚀 Getting Started
+## 🎨 Features
 
-### 🔧 Requirements
-
-- Python 3.8+
-- No additional libraries — everything is in the standard library!
-
-### 📦 Installation
-
-```bash
-git clone https://github.com/yourusername/port-checker-plus.git
-cd port-checker-plus
-python portCheckerPlus.py
-```
+- ✅ Scan single or multiple ports (range or comma-separated).
+- 🌍 Resolve hostnames to IP addresses with retry logic.
+- ⚡ Multi-threaded scanning for blazing-fast results.
+- 💾 Optional result export with timestamp and service info.
+- 🔒 Configurable timeout, retries, and UI preferences.
+- 🖥️ Cross-platform support (Windows, macOS, Linux).
+- 🧠 Smart input parsing and port validation.
+- 🖼️ Built-in settings panel via a clean Tkinter GUI.
 
 ---
 
-## ⚙️ Configuration
+## 🛠️ Installation
 
-The application stores settings in  `config.json`. You can modify the behavior through the GUI settings window.
+1. **Clone this repo or download the script:**
 
-Example:
-```json
-{
-  "timeout": 0.3,
-  "export_results": false,
-  "export_directory": "",
-  "show_open_only": false,
-  "default_host": "localhost",
-  "default_ports": "1433"
-}
-```
+   ```bash
+   git clone https://github.com/yourusername/port-checker-plus.git
+   cd port-checker-plus
+   ```
+
+2. **Install dependencies (Python 3.7+ required):**
+
+   No external packages needed! Just make sure Python’s standard libraries are intact.
+
+3. **(Optional) Create a standalone executable (Windows):**
+
+   ```bash
+   pip install pyinstaller
+   pyinstaller --onefile --windowed portCheckerPlus.py
+   ```
 
 ---
 
 ## 🧪 How to Use
 
-1. Enter a hostname or IP (e.g., `localhost`, `192.168.1.1`)
-2. Specify ports (e.g., `22,80,443` or ranges like `1000-1100`)
-3. Click **Check Ports**
-4. View results and optionally export them to a file
-5. Use the **Settings** menu to tweak app behavior
+1. **Run the application:**
+
+   ```bash
+   python portCheckerPlus.py
+   ```
+
+2. **Enter the hostname or IP and ports:**
+
+   - Format: `80`, `22,80,443`, or `20-25,80,443`
+   - Example: `google.com`, `localhost`, `192.168.1.1`
+
+3. **Click `Check Ports` to start the scan.**
+4. **View results in the scrollable console.**
+5. **Use `Clear Results` to reset output.**
 
 ---
 
-## 🧰 Developer Notes
+## ⚙️ Settings Menu
 
-- All port scanning is done using Python’s `socket` module.
-- Threads allow non-blocking scanning for large ranges.
-- GUI built entirely with `Tkinter`, compatible across platforms.
+Access via `🔧 View > Settings`:
 
----
+- Export results toggle and directory.
+- Custom timeout for connections.
+- Number of DNS retries.
+- Default host and ports.
 
-## 🤝 Contributing
+Your settings are saved in:
 
-Contributions, ideas, and feature requests are welcome!
-
-1. Fork the repo
-2. Create a new branch (`git checkout -b feature/fooBar`)
-3. Commit your changes
-4. Push to the branch (`git push origin feature/fooBar`)
-5. Create a new Pull Request
+- 🪟 `%APPDATA%\PortCheckerPlus`
+- 🍎 `~/Library/Application Support/PortCheckerPlus`
+- 🐧 `~/.config/PortCheckerPlus`
 
 ---
 
-## 📄 License
+## 📝 Example Output
 
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+```
+Resolving hostname: google.com
+Resolved IP: 142.250.190.14
+Attempt: 1
+
+Port 80 is OPEN (Service: http)
+Port 443 is OPEN (Service: https)
+
+Scan complete.
+Number of ports checked: 2
+```
 
 ---
 
-## 💬 Acknowledgments
+## 🙋 FAQ
 
-- Python community ❤️
-- Tkinter for the UI toolkit
-- All testers and contributors!
+**Q:** Does it require admin/root permissions?  
+**A:** Nope! Only basic socket access is needed.
+
+**Q:** Can it export results automatically?  
+**A:** Yes, toggle it in Settings and specify your preferred directory.
 
 ---
 
-### 🚨 Disclaimer
+## 📜 License
 
-This tool is intended for **educational and authorized use only**. Do not scan hosts you do not own or have permission to test.
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+
+---
+
+## 💡 Ideas or Issues?
+
+Feel free to open an issue or suggest improvements! Contributions are always welcome.
+
