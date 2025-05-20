@@ -292,10 +292,11 @@ def scan_udp_port(host, port, output_widget, config, export_file_path):
                     f.write(message)
 
     except Exception as e:
-        error_msg = f"Error on UDP port {port}: {e}\n"
-        output_widget.after(0, lambda: output_widget.insert(tk.END, error_msg))
-        if config.get("export_results", False):
-            os.makedirs(os.path.dirname(export_file_path), exist_ok=True)
+        if not config.get("show_open_only", False):
+            error_msg = f"Error on UDP port {port}: {e}\n"
+            output_widget.after(0, lambda: output_widget.insert(tk.END, error_msg))
+            if config.get("export_results", False):
+                os.makedirs(os.path.dirname(export_file_path), exist_ok=True)
             with file_lock:
                 with open(config.get("_current_export_file", export_file_path), "a") as f:
                     f.write(error_msg)
