@@ -86,7 +86,7 @@ def parse_ports(port_input):
 def open_settings_window(root, config):
     settings_win = tk.Toplevel(root)
     settings_win.title("Settings")
-    settings_win.geometry("450x470") # settings window size
+    settings_win.geometry("450x470") # settings window
     settings_win.configure(bg="#f0f0f0")
     settings_win.transient(root)
     settings_win.grab_set()
