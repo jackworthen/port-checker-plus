@@ -199,8 +199,6 @@ def open_settings_window(root, config):
     cancel_btn = tk.Button(save_cancel_frame, text="Cancel", font=("Segoe UI", 10), command=on_cancel)
     cancel_btn.pack(side="left")
 
-
-
 def resolve_hostname_and_print(host, output_widget, config):
     retries = config.get("retry_count", 2)
     for attempt in range(retries + 1):
