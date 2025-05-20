@@ -401,7 +401,7 @@ def run_gui():
     global root
     config = load_config()
     root = tk.Tk()
-    icon_path = resource_path("psp_icon.ico")
+    icon_path = resource_path("psp_icon2.ico")
     if os.path.exists(icon_path):
         root.iconbitmap(default=icon_path)
     root.title("Port Checker Plus")
