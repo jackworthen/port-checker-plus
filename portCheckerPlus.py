@@ -1,6 +1,7 @@
 import socket
 import threading
 import tkinter as tk
+from tkinter import ttk
 from tkinter import messagebox, scrolledtext, filedialog, Menu
 import json
 import os
@@ -37,7 +38,8 @@ default_config = {
     "export_directory": os.getcwd(),
     "default_host": "",
     "default_ports": "",
-    "retry_count": 2
+    "retry_count": 2,
+    "scan_protocol": "TCP"
 }
 
 def load_config():
@@ -84,7 +86,7 @@ def parse_ports(port_input):
 def open_settings_window(root, config):
     settings_win = tk.Toplevel(root)
     settings_win.title("Settings")
-    settings_win.geometry("450x400")
+    settings_win.geometry("450x470") # settings window size
     settings_win.configure(bg="#f0f0f0")
     settings_win.transient(root)
     settings_win.grab_set()
@@ -142,6 +144,13 @@ def open_settings_window(root, config):
     retry_spin.delete(0, tk.END)
     retry_spin.insert(0, str(config.get("retry_count", 2)))
     retry_spin.pack(anchor="w", padx=12)
+
+    label(settings_win, "Scan Protocol:").pack(anchor="w", padx=12, pady=(12, 0))
+    protocol_options = ["TCP", "UDP", "TCP/UDP"]
+    protocol_var = tk.StringVar(value=config.get("scan_protocol", "TCP"))
+    protocol_menu = ttk.Combobox(settings_win, textvariable=protocol_var, values=protocol_options, state="readonly", width=10)
+    protocol_menu.pack(anchor="w", padx=12, pady=(0, 10))
+
     label(settings_win, "Default Host:").pack(anchor="w", padx=12, pady=(12, 0))
     host_entry = tk.Entry(settings_win, font=("Segoe UI", 10))
     host_entry.insert(0, config.get("default_host", ""))
@@ -160,6 +169,7 @@ def open_settings_window(root, config):
             config["default_host"] = host_entry.get().strip()
             config["retry_count"] = int(retry_spin.get())
             config["default_ports"] = ports_entry.get().strip()
+            config["scan_protocol"] = protocol_var.get()
 
             # Validate default ports
             port_input = config["default_ports"]
@@ -182,6 +192,7 @@ def open_settings_window(root, config):
                 root.host_entry.insert(0, config["default_host"])
                 root.ports_entry.delete(0, tk.END)
                 root.ports_entry.insert(0, config["default_ports"])
+                root.protocol_var.set(config["scan_protocol"])
 
             settings_win.destroy()
         except ValueError:
@@ -231,7 +242,7 @@ def scan_port_with_export(host, port, output_widget, config, export_file_path):
         except:
             service = 'Unknown'
 
-        message = f"Port {port} is {status} (Service: {service})\n"
+        message = f"TCP Port {port} is {status} (Service: {service})\n"
 
         if config.get("show_open_only", False) and status != "OPEN":
             return
@@ -246,7 +257,42 @@ def scan_port_with_export(host, port, output_widget, config, export_file_path):
                     f.write(message)
 
     except Exception as e:
-        error_msg = f"Error on port {port}: {e}\n"
+        error_msg = f"Error on TCP port {port}: {e}\n"
+        output_widget.after(0, lambda: output_widget.insert(tk.END, error_msg))
+        if config.get("export_results", False):
+            os.makedirs(os.path.dirname(export_file_path), exist_ok=True)
+            with file_lock:
+                with open(config.get("_current_export_file", export_file_path), "a") as f:
+                    f.write(error_msg)
+
+
+
+def scan_udp_port(host, port, output_widget, config, export_file_path):
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.settimeout(config.get("timeout", 0.3))
+            sock.sendto(b"", (host, port))
+            try:
+                data, _ = sock.recvfrom(1024)
+                status = "OPEN (responded)"
+            except socket.timeout:
+                status = "OPEN|FILTERED (no response)"
+        
+        message = f"UDP Port {port} is {status}\n"  # Already correct
+
+        if config.get("show_open_only", False) and "OPEN" not in status:
+            return
+
+        output_widget.after(0, lambda: output_widget.insert(tk.END, message, "open" if "OPEN" in status else None))
+
+        if config.get("export_results", False):
+            os.makedirs(os.path.dirname(export_file_path), exist_ok=True)
+            with file_lock:
+                with open(config.get("_current_export_file", export_file_path), "a") as f:
+                    f.write(message)
+
+    except Exception as e:
+        error_msg = f"Error on UDP port {port}: {e}\n"
         output_widget.after(0, lambda: output_widget.insert(tk.END, error_msg))
         if config.get("export_results", False):
             os.makedirs(os.path.dirname(export_file_path), exist_ok=True)
@@ -260,6 +306,15 @@ def check_ports_threaded_with_export(host, ports, output_widget, clear_button, c
     export_file_path = get_export_file_path(config) if config.get("export_results") else None
 
     remaining = len(ports)
+
+    protocol = root.protocol_var.get().upper()
+    def run_scan(p):
+        if protocol in ("TCP", "TCP/UDP"):
+            scan_port_with_export(host, p, output_widget, config, export_file_path)
+        if protocol in ("UDP", "TCP/UDP"):
+            scan_udp_port(host, p, output_widget, config, export_file_path)
+        on_port_done()
+
     counter = {"count": 0}
     counter_lock = threading.Lock()
 
@@ -271,10 +326,7 @@ def check_ports_threaded_with_export(host, ports, output_widget, clear_button, c
 
     for port in ports:
         threading.Thread(
-            target=lambda p=port: (
-                scan_port_with_export(host, p, output_widget, config, export_file_path),
-                on_port_done()
-            ),
+            target=lambda p=port: run_scan(p),
             daemon=True
         ).start()
 
@@ -353,7 +405,7 @@ def run_gui():
         root.iconbitmap(default=icon_path)
     root.title("Port Checker Plus")
     root.configure(bg="#f8f8f8")
-    root.geometry("600x450")
+    root.geometry("600x500")  # main window size
 
     menubar = Menu(root)
     file_menu = Menu(menubar, tearoff=0)
@@ -374,6 +426,15 @@ def run_gui():
 
     port_frame = tk.Frame(root, bg="#f8f8f8")
     port_frame.pack(padx=12, pady=5, fill="x")
+
+    protocol_frame = tk.Frame(root, bg="#f8f8f8")
+    protocol_frame.pack(padx=12, pady=(5, 5), fill="x")
+    tk.Label(protocol_frame, text="Protocol:", bg="#f8f8f8", font=("Segoe UI", 10)).pack(side="left")
+    root.protocol_var = tk.StringVar(value=config.get("scan_protocol", "TCP"))
+    protocol_options = ["TCP", "UDP", "TCP/UDP"]
+    root.protocol_menu = ttk.Combobox(protocol_frame, textvariable=root.protocol_var, values=protocol_options, state="readonly", width=10)
+    root.protocol_menu.pack(side="left", padx=(8, 0))
+
     tk.Label(port_frame, text="Ports:", bg="#f8f8f8", font=("Segoe UI", 10)).pack(side="left")
     root.ports_entry = tk.Entry(port_frame, width=40, font=("Segoe UI", 10))
     root.ports_entry.pack(side="left", padx=(8, 0), fill="x", expand=True)
