@@ -288,7 +288,11 @@ def scan_udp_port(host, port, output_widget, config, export_file_path):
         if config.get("export_results", False):
             os.makedirs(os.path.dirname(export_file_path), exist_ok=True)
             with file_lock:
-                with open(config.get("_current_export_file", export_file_path), "a") as f:
+                if config.get("export_results", False) and export_file_path:
+                    os.makedirs(os.path.dirname(export_file_path), exist_ok=True)
+                with file_lock:
+                    with open(config.get("_current_export_file", export_file_path), "a") as f:
+                        f.write(message)
                     f.write(message)
 
     except Exception as e:
@@ -298,7 +302,11 @@ def scan_udp_port(host, port, output_widget, config, export_file_path):
             if config.get("export_results", False):
                 os.makedirs(os.path.dirname(export_file_path), exist_ok=True)
             with file_lock:
-                with open(config.get("_current_export_file", export_file_path), "a") as f:
+                if config.get("export_results", False) and export_file_path:
+                    os.makedirs(os.path.dirname(export_file_path), exist_ok=True)
+                with file_lock:
+                    with open(config.get("_current_export_file", export_file_path), "a") as f:
+                        f.write(message)
                     f.write(error_msg)
 
 
