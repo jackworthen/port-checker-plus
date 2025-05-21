@@ -309,6 +309,7 @@ def scan_udp_port(host, port, output_widget, config, export_file_path):
                         f.write(message)
                     f.write(error_msg)
 
+
 def check_ports_threaded_with_export(host, ports, output_widget, clear_button, config):
     clear_button.config(state=tk.NORMAL)
     export_file_path = get_export_file_path(config) if config.get("export_results") else None
