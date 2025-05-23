@@ -436,9 +436,9 @@ def run_gui():
     file_menu.add_command(label="⏻ Exit", command=root.quit)
     menubar.add_cascade(label="File", menu=file_menu)
 
-    view_menu = Menu(menubar, tearoff=0)
-    view_menu.add_command(label="🔧 Settings", command=lambda: open_settings_window(root, config))
-    menubar.add_cascade(label="View", menu=view_menu)
+    edit_menu = Menu(menubar, tearoff=0)
+    edit_menu.add_command(label="🔧 Settings", command=lambda: open_settings_window(root, config))
+    menubar.add_cascade(label="Edit", menu=edit_menu)
     root.config(menu=menubar)
 
     host_frame = tk.Frame(root, bg="#f8f8f8")
