@@ -91,6 +91,7 @@ def open_settings_window(root, config):
     settings_win.configure(bg="#f0f0f0")
     settings_win.transient(root)
     settings_win.grab_set()
+    set_window_icon(settings_win)  # Set icon for settings window
 
     def label(master, text):
         return tk.Label(master, text=text, bg="#f0f0f0", font=("Segoe UI", 10))
@@ -400,16 +401,35 @@ def on_clear_output():
     root.progress_var.set(0)
     root.status_label.config(text="Ready")
 
+def set_window_icon(window):
+    """Set the window icon, handling PyInstaller bundling"""
+    try:
+        icon_path = resource_path("psp_icon2.ico")
+        if os.path.exists(icon_path):
+            window.iconbitmap(icon_path)
+        else:
+            # Try alternative paths
+            alternative_paths = [
+                "psp_icon2.ico",
+                os.path.join(os.path.dirname(__file__), "psp_icon2.ico"),
+                os.path.join(os.getcwd(), "psp_icon2.ico")
+            ]
+            for alt_path in alternative_paths:
+                if os.path.exists(alt_path):
+                    window.iconbitmap(alt_path)
+                    break
+    except Exception as e:
+        # If icon loading fails, continue without icon
+        print(f"Could not load icon: {e}")
+
 def run_gui():
     global root
     config = load_config()
     root = tk.Tk()
-    icon_path = resource_path("psp_icon2.ico")
-    if os.path.exists(icon_path):
-        root.iconbitmap(default=icon_path)
+    set_window_icon(root)
     root.title("Port Checker Plus")
     root.configure(bg="#f8f8f8")
-    root.geometry("600x600")  # main window size
+    root.geometry("600x500")  # main window size
 
     menubar = Menu(root)
     file_menu = Menu(menubar, tearoff=0)
