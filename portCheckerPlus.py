@@ -319,8 +319,15 @@ def check_ports_threaded_with_export(host, ports, output_widget, clear_button, c
     def on_port_done():
         with counter_lock:
             counter["count"] += 1
+            # Update progress bar and status
+            progress = (counter["count"] / total_scans) * 100
+            root.progress_var.set(progress)
+            root.status_label.config(text=f"{counter['count']} of {total_scans} ports scanned")
+            
             if counter["count"] == total_scans:
                 output_widget.after(0, lambda: output_widget.insert(tk.END, f"\nScan complete.\nNumber of ports checked: {len(ports)}\n"))
+                # Reset progress bar and status after completion
+                root.after(2000, lambda: (root.progress_var.set(0), root.status_label.config(text="Ready")))
 
     def run_tcp_scan(p):
         try:
@@ -367,7 +374,16 @@ def on_check_ports_with_export():
 
     try:
         ports = parse_ports(port_input)
+        if not ports:
+            messagebox.showwarning("Input Error", "No valid ports found in input.")
+            return
+            
         root.clear_button.config(state=tk.DISABLED)
+        
+        # Initialize progress bar
+        root.progress_var.set(0)
+        root.status_label.config(text="Starting scan...")
+        
         threading.Thread(
             target=check_ports_threaded_with_export,
             args=(host, ports, root.output_text, root.clear_button, config),
@@ -380,6 +396,9 @@ def on_check_ports_with_export():
 def on_clear_output():
     root.output_text.delete("1.0", tk.END)
     root.clear_button.config(state=tk.DISABLED)
+    # Reset progress bar and status when clearing
+    root.progress_var.set(0)
+    root.status_label.config(text="Ready")
 
 def run_gui():
     global root
@@ -390,7 +409,7 @@ def run_gui():
         root.iconbitmap(default=icon_path)
     root.title("Port Checker Plus")
     root.configure(bg="#f8f8f8")
-    root.geometry("600x500")  # main window size
+    root.geometry("600x600")  # main window size
 
     menubar = Menu(root)
     file_menu = Menu(menubar, tearoff=0)
@@ -435,6 +454,19 @@ def run_gui():
     root.output_text = scrolledtext.ScrolledText(root, font=("Courier", 10), width=70, height=20, wrap="none")
     root.output_text.pack(padx=12, pady=10, fill="both", expand=True)
     root.output_text.tag_config('open', foreground='green')
+
+    # Progress bar and status frame
+    progress_frame = tk.Frame(root, bg="#f8f8f8")
+    progress_frame.pack(padx=12, pady=(0, 10), fill="x")
+    
+    # Status label
+    root.status_label = tk.Label(progress_frame, text="Ready", bg="#f8f8f8", font=("Segoe UI", 9))
+    root.status_label.pack(side="left")
+    
+    # Progress bar
+    root.progress_var = tk.DoubleVar()
+    root.progress_bar = ttk.Progressbar(progress_frame, variable=root.progress_var, maximum=100, length=200)
+    root.progress_bar.pack(side="right", padx=(10, 0))
 
     root.mainloop()
 
