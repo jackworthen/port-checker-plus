@@ -429,7 +429,7 @@ def run_gui():
     set_window_icon(root)
     root.title("Port Checker Plus")
     root.configure(bg="#f8f8f8")
-    root.geometry("600x500")  # main window size
+    root.geometry("600x600")  # main window size
 
     menubar = Menu(root)
     file_menu = Menu(menubar, tearoff=0)
