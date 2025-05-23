@@ -8,6 +8,7 @@ import os
 from datetime import datetime
 import platform
 from pathlib import Path
+import time
 
 import sys
 
@@ -221,9 +222,9 @@ def resolve_hostname_and_print(host, output_widget, config):
             return resolved_ip
         except socket.gaierror as e:
             if attempt == retries:
-                messagebox.showerror("DNS Error", f"Could not resolve host: {host}{e}")
+                messagebox.showerror("DNS Error", f"Could not resolve host: {host} - {e}")
                 return None
-                time.sleep(0.5)
+            time.sleep(0.5)
 
 file_lock = threading.Lock()
 
@@ -265,8 +266,6 @@ def scan_port_with_export(host, port, output_widget, config, export_file_path):
                 with open(config.get("_current_export_file", export_file_path), "a") as f:
                     f.write(error_msg)
 
-
-
 def scan_udp_port(host, port, output_widget, config, export_file_path):
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
@@ -278,7 +277,7 @@ def scan_udp_port(host, port, output_widget, config, export_file_path):
             except socket.timeout:
                 status = "OPEN|FILTERED (no response)"
         
-        message = f"UDP Port {port} is {status}\n"  # Already correct
+        message = f"UDP Port {port} is {status}\n"
 
         if config.get("show_open_only", False) and "OPEN" not in status:
             return
@@ -288,11 +287,7 @@ def scan_udp_port(host, port, output_widget, config, export_file_path):
         if config.get("export_results", False):
             os.makedirs(os.path.dirname(export_file_path), exist_ok=True)
             with file_lock:
-                if config.get("export_results", False) and export_file_path:
-                    os.makedirs(os.path.dirname(export_file_path), exist_ok=True)
-                with file_lock:
-                    with open(config.get("_current_export_file", export_file_path), "a") as f:
-                        f.write(message)
+                with open(config.get("_current_export_file", export_file_path), "a") as f:
                     f.write(message)
 
     except Exception as e:
@@ -301,28 +296,22 @@ def scan_udp_port(host, port, output_widget, config, export_file_path):
             output_widget.after(0, lambda: output_widget.insert(tk.END, error_msg))
             if config.get("export_results", False):
                 os.makedirs(os.path.dirname(export_file_path), exist_ok=True)
-            with file_lock:
-                if config.get("export_results", False) and export_file_path:
-                    os.makedirs(os.path.dirname(export_file_path), exist_ok=True)
                 with file_lock:
                     with open(config.get("_current_export_file", export_file_path), "a") as f:
-                        f.write(message)
-                    f.write(error_msg)
-
+                        f.write(error_msg)
 
 def check_ports_threaded_with_export(host, ports, output_widget, clear_button, config):
     clear_button.config(state=tk.NORMAL)
     export_file_path = get_export_file_path(config) if config.get("export_results") else None
 
-    remaining = len(ports)
-
     protocol = root.protocol_var.get().upper()
-    def run_scan(p):
-        if protocol in ("TCP", "TCP/UDP"):
-            scan_port_with_export(host, p, output_widget, config, export_file_path)
-        if protocol in ("UDP", "TCP/UDP"):
-            scan_udp_port(host, p, output_widget, config, export_file_path)
-        on_port_done()
+    
+    # Calculate total expected scans
+    total_scans = 0
+    if protocol in ("TCP", "TCP/UDP"):
+        total_scans += len(ports)
+    if protocol in ("UDP", "TCP/UDP"):
+        total_scans += len(ports)
 
     counter = {"count": 0}
     counter_lock = threading.Lock()
@@ -330,39 +319,26 @@ def check_ports_threaded_with_export(host, ports, output_widget, clear_button, c
     def on_port_done():
         with counter_lock:
             counter["count"] += 1
-            if counter["count"] == remaining:
-                output_widget.after(0, lambda: output_widget.insert(tk.END, f"\nScan complete.\nNumber of ports checked:{remaining}"))
+            if counter["count"] == total_scans:
+                output_widget.after(0, lambda: output_widget.insert(tk.END, f"\nScan complete.\nNumber of ports checked: {len(ports)}\n"))
+
+    def run_tcp_scan(p):
+        try:
+            scan_port_with_export(host, p, output_widget, config, export_file_path)
+        finally:
+            on_port_done()
+
+    def run_udp_scan(p):
+        try:
+            scan_udp_port(host, p, output_widget, config, export_file_path)
+        finally:
+            on_port_done()
 
     for port in ports:
-        threading.Thread(
-            target=lambda p=port: run_scan(p),
-            daemon=True
-        ).start()
-
-def parse_ports(port_input):
-    ports = []
-    seen = set()
-    parts = port_input.split(",")
-    for part in parts:
-        part = part.strip()
-        if '-' in part:
-            try:
-                start, end = map(int, part.split('-'))
-                for p in range(start, end + 1):
-                    if p not in seen:
-                        seen.add(p)
-                        ports.append(p)
-            except ValueError:
-                continue
-        else:
-            try:
-                p = int(part)
-                if p not in seen:
-                    seen.add(p)
-                    ports.append(p)
-            except ValueError:
-                continue
-    return ports
+        if protocol in ("TCP", "TCP/UDP"):
+            threading.Thread(target=run_tcp_scan, args=(port,), daemon=True).start()
+        if protocol in ("UDP", "TCP/UDP"):
+            threading.Thread(target=run_udp_scan, args=(port,), daemon=True).start()
 
 def on_check_ports_with_export():
     config = load_config()
@@ -400,8 +376,8 @@ def on_check_ports_with_export():
         root.clear_button.config(state=tk.NORMAL)
     except Exception as e:
         messagebox.showerror("Error", str(e))
-def on_clear_output():
 
+def on_clear_output():
     root.output_text.delete("1.0", tk.END)
     root.clear_button.config(state=tk.DISABLED)
 
