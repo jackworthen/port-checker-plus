@@ -186,8 +186,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 If you encounter any problems or have suggestions:
 - Open an [issue](https://github.com/jackworthen/port-checker-plus/issues)
-- Check the [documentation](https://github.com/jackworthen/port-checker-plus/wiki)
-- Review existing [discussions](https://github.com/jackworthen/port-checker-plus/discussions)
 
 ---
 
