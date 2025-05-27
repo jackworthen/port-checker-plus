@@ -86,33 +86,144 @@ def parse_ports(port_input):
 
 def open_settings_window(root, config):
     settings_win = tk.Toplevel(root)
-    settings_win.title("Settings")
-    settings_win.geometry("450x470") # settings window size
-    settings_win.configure(bg="#f0f0f0")
+    settings_win.title("Settings - Port Checker Plus")
+    settings_win.geometry("520x510")
+    settings_win.configure(bg="#ffffff")
     settings_win.transient(root)
     settings_win.grab_set()
-    set_window_icon(settings_win)  # Set icon for settings window
+    settings_win.resizable(False, False)
+    set_window_icon(settings_win)
 
-    def label(master, text):
-        return tk.Label(master, text=text, bg="#f0f0f0", font=("Segoe UI", 10))
+    # Create main container with padding
+    main_frame = tk.Frame(settings_win, bg="#ffffff")
+    main_frame.pack(fill="both", expand=True, padx=20, pady=20)
+
+    # Title
+    title_label = tk.Label(main_frame, text="Settings", 
+                          font=("Segoe UI", 14, "bold"), bg="#ffffff", fg="#2c3e50")
+    title_label.pack(anchor="w", pady=(0, 20))
+
+    # Create notebook for tabbed interface
+    notebook = ttk.Notebook(main_frame)
+    notebook.pack(fill="both", expand=True, pady=(0, 20))
+
+    # ===== GENERAL TAB =====
+    general_frame = tk.Frame(notebook, bg="#ffffff")
+    notebook.add(general_frame, text="General")
+
+    # Scanning Options Section
+    scan_section = tk.LabelFrame(general_frame, text="Scanning Options", 
+                                font=("Segoe UI", 10, "bold"), bg="#ffffff", 
+                                fg="#34495e", padx=15, pady=10)
+    scan_section.pack(fill="x", padx=15, pady=(15, 10))
+
+    # Protocol selection
+    protocol_frame = tk.Frame(scan_section, bg="#ffffff")
+    protocol_frame.pack(fill="x", pady=(0, 12))
+    tk.Label(protocol_frame, text="Scan Protocol:", font=("Segoe UI", 10), 
+             bg="#ffffff", fg="#2c3e50").pack(side="left")
+    protocol_options = ["TCP", "UDP", "TCP/UDP"]
+    protocol_var = tk.StringVar(value=config.get("scan_protocol", "TCP"))
+    protocol_menu = ttk.Combobox(protocol_frame, textvariable=protocol_var, 
+                                values=protocol_options, state="readonly", width=12,
+                                font=("Segoe UI", 10))
+    protocol_menu.pack(side="right")
+
+    # Timeout setting
+    timeout_frame = tk.Frame(scan_section, bg="#ffffff")
+    timeout_frame.pack(fill="x", pady=(0, 12))
+    tk.Label(timeout_frame, text="Connection Timeout (seconds):", font=("Segoe UI", 10), 
+             bg="#ffffff", fg="#2c3e50").pack(side="left")
+    timeout_spin = tk.Spinbox(timeout_frame, width=8, from_=0.1, to=10.0, 
+                             increment=0.1, format="%.1f", font=("Segoe UI", 10))
+    timeout_spin.delete(0, tk.END)
+    timeout_spin.insert(0, str(config.get("timeout", 0.3)))
+    timeout_spin.pack(side="right")
+
+    # DNS retry count
+    retry_frame = tk.Frame(scan_section, bg="#ffffff")
+    retry_frame.pack(fill="x", pady=(0, 12))
+    tk.Label(retry_frame, text="DNS Retry Count:", font=("Segoe UI", 10), 
+             bg="#ffffff", fg="#2c3e50").pack(side="left")
+    retry_spin = tk.Spinbox(retry_frame, from_=0, to=5, width=8, font=("Segoe UI", 10))
+    retry_spin.delete(0, tk.END)
+    retry_spin.insert(0, str(config.get("retry_count", 2)))
+    retry_spin.pack(side="right")
+
+    # Display Options Section
+    display_section = tk.LabelFrame(general_frame, text="Display Options", 
+                                   font=("Segoe UI", 10, "bold"), bg="#ffffff", 
+                                   fg="#34495e", padx=15, pady=10)
+    display_section.pack(fill="x", padx=15, pady=10)
 
     show_open_only_var = tk.BooleanVar(value=config.get("show_open_only", False))
-    show_open_only_check = tk.Checkbutton(settings_win, text="Only Show Open Ports", variable=show_open_only_var,
-                                          bg="#f0f0f0", font=("Segoe UI", 10))
-    show_open_only_check.pack(anchor="w", padx=12)
+    show_open_check = tk.Checkbutton(display_section, 
+                                    text="Show only open ports in results", 
+                                    variable=show_open_only_var,
+                                    bg="#ffffff", font=("Segoe UI", 10), 
+                                    fg="#2c3e50", activebackground="#ffffff")
+    show_open_check.pack(anchor="w", pady=5)
+
+    # ===== DEFAULTS TAB =====
+    defaults_frame = tk.Frame(notebook, bg="#ffffff")
+    notebook.add(defaults_frame, text="Defaults")
+
+    # Default Values Section
+    defaults_section = tk.LabelFrame(defaults_frame, text="Default Values", 
+                                    font=("Segoe UI", 10, "bold"), bg="#ffffff", 
+                                    fg="#34495e", padx=15, pady=10)
+    defaults_section.pack(fill="x", padx=15, pady=(15, 10))
+
+    # Default host
+    tk.Label(defaults_section, text="Default Host:", font=("Segoe UI", 10), 
+             bg="#ffffff", fg="#2c3e50").pack(anchor="w", pady=(5, 2))
+    host_entry = tk.Entry(defaults_section, font=("Segoe UI", 10), width=50)
+    host_entry.insert(0, config.get("default_host", ""))
+    host_entry.pack(fill="x", pady=(0, 15))
+
+    # Default ports
+    tk.Label(defaults_section, text="Default Ports:", font=("Segoe UI", 10), 
+             bg="#ffffff", fg="#2c3e50").pack(anchor="w", pady=(0, 2))
+    tk.Label(defaults_section, text="Examples: 80,443,22 or 1-100,8080", 
+             font=("Segoe UI", 9), bg="#ffffff", fg="#7f8c8d").pack(anchor="w")
+    ports_entry = tk.Entry(defaults_section, font=("Segoe UI", 10), width=50)
+    ports_entry.insert(0, config.get("default_ports", ""))
+    ports_entry.pack(fill="x", pady=(5, 0))
+
+    # ===== EXPORT TAB =====
+    export_frame = tk.Frame(notebook, bg="#ffffff")
+    notebook.add(export_frame, text="Export")
+
+    # Export Options Section
+    export_section = tk.LabelFrame(export_frame, text="Export Options", 
+                                  font=("Segoe UI", 10, "bold"), bg="#ffffff", 
+                                  fg="#34495e", padx=15, pady=10)
+    export_section.pack(fill="x", padx=15, pady=(15, 10))
 
     export_var = tk.BooleanVar(value=config.get("export_results", False))
-    export_check = tk.Checkbutton(settings_win, text="Export Results", variable=export_var,
-                                   bg="#f0f0f0", font=("Segoe UI", 10))
-    export_check.pack(anchor="w", padx=12)
+    export_check = tk.Checkbutton(export_section, 
+                                 text="Enable automatic export of scan results", 
+                                 variable=export_var,
+                                 bg="#ffffff", font=("Segoe UI", 10), 
+                                 fg="#2c3e50", activebackground="#ffffff")
+    export_check.pack(anchor="w", pady=(5, 15))
 
-    label(settings_win, "Export Directory:").pack(anchor="w", padx=12, pady=(12, 0))
-    dir_frame = tk.Frame(settings_win, bg="#f0f0f0")
-    dir_frame.pack(fill="x", padx=12)
+    # Export directory
+    dir_label = tk.Label(export_section, text="Export Directory:", 
+                        font=("Segoe UI", 10), bg="#ffffff", fg="#2c3e50")
+    dir_label.pack(anchor="w", pady=(0, 5))
+
+    dir_frame = tk.Frame(export_section, bg="#ffffff")
+    dir_frame.pack(fill="x", pady=(0, 10))
+    
     dir_entry = tk.Entry(dir_frame, font=("Segoe UI", 10))
     dir_entry.insert(0, config.get("export_directory", os.getcwd()))
-    dir_entry.pack(side="left", fill="x", expand=True)
-    browse_btn = tk.Button(dir_frame, text="Browse", font=("Segoe UI", 9))
+    dir_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
+    
+    browse_btn = tk.Button(dir_frame, text="Browse...", font=("Segoe UI", 9),
+                          bg="#3498db", fg="white", activebackground="#2980b9",
+                          relief="flat", padx=15)
+    browse_btn.pack(side="right")
 
     def browse_directory():
         selected = filedialog.askdirectory(parent=settings_win)
@@ -123,72 +234,85 @@ def open_settings_window(root, config):
         settings_win.focus_force()
 
     browse_btn.config(command=browse_directory)
-    browse_btn.pack(side="left", padx=5)
 
     def toggle_export_inputs():
         state = tk.NORMAL if export_var.get() else tk.DISABLED
         dir_entry.config(state=state)
         browse_btn.config(state=state)
+        dir_label.config(fg="#2c3e50" if export_var.get() else "#bdc3c7")
 
     export_check.config(command=toggle_export_inputs)
     toggle_export_inputs()
 
-    label(settings_win, "Custom Timeout (seconds):").pack(anchor="w", padx=12, pady=(12, 0))
-    timeout_frame = tk.Frame(settings_win, bg="#f0f0f0")
-    timeout_frame.pack(fill="x", padx=12)
-    timeout_spin = tk.Spinbox(timeout_frame, width=5, from_=0.1, to=10.0, increment=0.1, format="%.1f", font=("Segoe UI", 9))
-    timeout_spin.delete(0, tk.END)
-    timeout_spin.insert(0, str(config.get("timeout", 0.3)))
-    timeout_spin.pack(side="left")
-    
-    label(settings_win, "DNS Retry Count:").pack(anchor="w", padx=12, pady=(12, 0))
-    retry_spin = tk.Spinbox(settings_win, from_=0, to=5, width=5, font=("Segoe UI", 9))
-    retry_spin.delete(0, tk.END)
-    retry_spin.insert(0, str(config.get("retry_count", 2)))
-    retry_spin.pack(anchor="w", padx=12)
+    # Export file info
+    info_label = tk.Label(export_section, 
+                         text="Results will be saved to 'psp_log.txt' in the selected directory",
+                         font=("Segoe UI", 9), bg="#ffffff", fg="#7f8c8d")
+    info_label.pack(anchor="w", pady=(5, 0))
 
-    label(settings_win, "Scan Protocol:").pack(anchor="w", padx=12, pady=(12, 0))
-    protocol_options = ["TCP", "UDP", "TCP/UDP"]
-    protocol_var = tk.StringVar(value=config.get("scan_protocol", "TCP"))
-    protocol_menu = ttk.Combobox(settings_win, textvariable=protocol_var, values=protocol_options, state="readonly", width=10)
-    protocol_menu.pack(anchor="w", padx=12, pady=(0, 10))
+    # ===== BUTTONS FRAME =====
+    button_frame = tk.Frame(main_frame, bg="#ffffff")
+    button_frame.pack(fill="x", pady=(10, 0))
 
-    label(settings_win, "Default Host:").pack(anchor="w", padx=12, pady=(12, 0))
-    host_entry = tk.Entry(settings_win, font=("Segoe UI", 10))
-    host_entry.insert(0, config.get("default_host", ""))
-    host_entry.pack(fill="x", padx=12)
+    # Separator line
+    separator = tk.Frame(button_frame, height=1, bg="#e0e0e0")
+    separator.pack(fill="x", pady=(0, 15))
 
-    label(settings_win, "Default Ports:").pack(anchor="w", padx=12, pady=(12, 0))
-    ports_entry = tk.Entry(settings_win, font=("Segoe UI", 10))
-    ports_entry.insert(0, config.get("default_ports", ""))
-    ports_entry.pack(fill="x", padx=12)
+    # Button container
+    btn_container = tk.Frame(button_frame, bg="#ffffff")
+    btn_container.pack(anchor="e")
+
+    def on_cancel():
+        settings_win.destroy()
 
     def on_save():
         try:
-            config["timeout"] = float(timeout_spin.get())
+            # Validate timeout
+            timeout_val = float(timeout_spin.get())
+            if timeout_val <= 0:
+                messagebox.showerror("Invalid Input", "Timeout must be greater than 0.")
+                return
+
+            # Validate default ports if provided
+            port_input = ports_entry.get().strip()
+            if port_input:
+                parsed_ports = parse_ports(port_input)
+                invalid_ports = [p for p in parsed_ports if p > 65535]
+                if invalid_ports:
+                    messagebox.showerror("Invalid Ports", 
+                                       f"The following ports are invalid: {invalid_ports}\n\n"
+                                       f"Valid port range: 0-65535")
+                    return
+
+            # Validate export directory if export is enabled
+            if export_var.get():
+                export_path = dir_entry.get().strip()
+                if not export_path:
+                    messagebox.showerror("Export Error", "Please select a directory for export.")
+                    return
+                if not os.path.exists(export_path):
+                    try:
+                        os.makedirs(export_path, exist_ok=True)
+                    except Exception as e:
+                        messagebox.showerror("Export Error", 
+                                           f"Cannot create export directory:\n{e}")
+                        return
+
+            # Save configuration
+            config["timeout"] = timeout_val
             config["export_results"] = export_var.get()
             config["show_open_only"] = show_open_only_var.get()
             config["default_host"] = host_entry.get().strip()
             config["retry_count"] = int(retry_spin.get())
-            config["default_ports"] = ports_entry.get().strip()
+            config["default_ports"] = port_input
             config["scan_protocol"] = protocol_var.get()
-
-            # Validate default ports
-            port_input = config["default_ports"]
-            parsed_ports = parse_ports(port_input)
-            invalid_ports = [p for p in parsed_ports if p > 65535]
-            if invalid_ports:
-                messagebox.showerror("Error", f"The following ports are invalid: {invalid_ports}\n\nValid port range: 0-65535")
-                return
-
+            
             if export_var.get():
-                export_path = dir_entry.get().strip()
-                if not export_path:
-                    messagebox.showerror("Error", "Please select a directory for export.")
-                    return
-                config["export_directory"] = export_path
+                config["export_directory"] = dir_entry.get().strip()
 
             save_config(config)
+            
+            # Update main window if it exists
             if root and hasattr(root, "host_entry") and hasattr(root, "ports_entry"):
                 root.host_entry.delete(0, tk.END)
                 root.host_entry.insert(0, config["default_host"])
@@ -196,21 +320,28 @@ def open_settings_window(root, config):
                 root.ports_entry.insert(0, config["default_ports"])
                 root.protocol_var.set(config["scan_protocol"])
 
+            messagebox.showinfo("Settings Saved", "Your settings have been saved successfully.")
             settings_win.destroy()
-        except ValueError:
-            messagebox.showerror("Invalid Input", "Timeout must be a number.")
+            
+        except ValueError as e:
+            messagebox.showerror("Invalid Input", "Please check your input values.")
 
-    save_cancel_frame = tk.Frame(settings_win, bg="#f0f0f0")
-    save_cancel_frame.pack(pady=15)
+    # Style buttons
+    cancel_btn = tk.Button(btn_container, text="Cancel", font=("Segoe UI", 10),
+                          command=on_cancel, bg="#95a5a6", fg="white", 
+                          activebackground="#7f8c8d", relief="flat", padx=20, pady=8)
+    cancel_btn.pack(side="right", padx=(10, 0))
 
-    def on_cancel():
-        settings_win.destroy()
+    save_btn = tk.Button(btn_container, text="Save Settings", font=("Segoe UI", 10, "bold"),
+                        command=on_save, bg="#27ae60", fg="white", 
+                        activebackground="#229954", relief="flat", padx=20, pady=8)
+    save_btn.pack(side="right")
 
-    save_btn = tk.Button(save_cancel_frame, text="Save", font=("Segoe UI", 10), command=on_save)
-    save_btn.pack(side="left", padx=(0, 10))
-
-    cancel_btn = tk.Button(save_cancel_frame, text="Cancel", font=("Segoe UI", 10), command=on_cancel)
-    cancel_btn.pack(side="left")
+    # Center the window
+    settings_win.update_idletasks()
+    x = (settings_win.winfo_screenwidth() // 2) - (settings_win.winfo_width() // 2)
+    y = (settings_win.winfo_screenheight() // 2) - (settings_win.winfo_height() // 2)
+    settings_win.geometry(f"+{x}+{y}")
 
 def resolve_hostname_and_print(host, output_widget, config):
     retries = config.get("retry_count", 2)
