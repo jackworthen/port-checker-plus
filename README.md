@@ -1,153 +1,155 @@
 # Port Checker Plus
 
-A professional, feature-rich port scanning tool with a modern graphical user interface built in Python. Port Checker Plus provides an intuitive way to scan TCP and UDP ports on remote hosts with advanced configuration options and export capabilities.
+A modern, feature-rich network port scanning tool with an intuitive GUI built in Python. Port Checker Plus provides comprehensive port scanning capabilities with advanced results visualization, real-time filtering, and detailed reporting.
 
-## 🌟 Features
+## 🚀 Features
 
-### Core Functionality
-- **Multi-Protocol Support**: Scan TCP, UDP, or both protocols simultaneously
-- **Flexible Port Specification**: Support for individual ports, ranges, and comma-separated lists
-- **Real-Time Results**: Live scanning progress with visual progress bar
+### Core Scanning
+- **Multi-Protocol Support**: TCP, UDP, and combined TCP/UDP scanning
+- **Flexible Port Input**: Single ports, ranges (1-100), or comma-separated lists (80,443,22)
 - **DNS Resolution**: Automatic hostname resolution with configurable retry attempts
-- **Service Detection**: Identifies services running on open ports
+- **Response Time Measurement**: Real-time connection speed measurement in milliseconds
+- **Threaded Scanning**: Fast, concurrent port scanning for improved performance
 
-### Advanced Options
-- **Customizable Timeouts**: Adjustable connection timeout settings (0.1-10.0 seconds)
-- **Filtered Results**: Option to show only open ports for cleaner output
-- **Export Functionality**: Automatic export of scan results to text files
-- **Default Configurations**: Save frequently used hosts and port ranges
-- **Cross-Platform**: Works on Windows, macOS, and Linux
+### Enhanced User Interface
+- **Sortable Results Table**: Click column headers to sort by port, protocol, status, service, or response time
+- **Real-Time Search**: Instantly filter results by port number, service, or status
+- **Color-Coded Results**: 
+  - 🟢 **Open Ports** - Green and bold
+  - ⚫ **Closed Ports** - Gray text
+  - 🟣 **Filtered Ports** - Purple text (UDP)
+  - ❌ **Errors** - Red italic text
+- **Progress Tracking**: Real-time progress bar and status updates
+- **Professional Layout**: Clean, modern interface with proper spacing and organization
 
-### Professional UI
-- **Tabbed Settings Interface**: Organized settings across General, Defaults, and Export tabs
-- **Progress Tracking**: Real-time scan progress with status updates
-- **Syntax Highlighting**: Color-coded results (green for open ports)
-- **Responsive Design**: Clean, modern interface with proper spacing and typography
+### Advanced Configuration
+- **Customizable Timeouts**: Adjust connection timeout from 0.1 to 10 seconds
+- **Default Values**: Set default hosts and port ranges for quick scanning
+- **Show Open Only**: Option to display only open ports for cleaner results
+- **Protocol Selection**: Choose between TCP, UDP, or both protocols
 
-## 🚀 Installation
+### Export & Reporting
+- **Automatic Export**: Optional automatic saving of scan results
+- **Timestamped Logs**: Each scan includes timestamp and target information
+- **Configurable Location**: Choose custom directory for export files
+- **Cross-Platform Paths**: Intelligent config file placement per operating system
+
+## 📦 Installation
 
 ### Prerequisites
-- Python 3.6 or higher
+- Python 3.7 or higher
 - tkinter (usually included with Python)
 
-### Option 1: Run from Source
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/jackworthen/port-checker-plus.git
-   cd port-checker-plus
-   ```
+### Clone Repository
+```bash
+git clone https://github.com/jackworthen/portCheckerPlus.git
+cd portCheckerPlus
+```
 
-2. Run the application:
-   ```bash
-   python portCheckerPlus.py
-   ```
+### Run Application
+```bash
+python portCheckerPlus.py
+```
 
-## 📖 Usage
+## 🎯 Usage
 
-### Basic Port Scanning
-1. Enter the target host (IP address or hostname)
-2. Specify ports using any of these formats:
+### Basic Scanning
+1. **Enter Target Host**: IP address or hostname (e.g., `google.com`, `192.168.1.1`)
+2. **Specify Ports**: Enter ports in any of these formats:
    - Single port: `80`
-   - Multiple ports: `80,443,22`
-   - Port range: `1-100`
-   - Combined: `80,443,1000-2000`
-3. Select the protocol (TCP, UDP, or TCP/UDP)
-4. Click "Check Ports" to start scanning
+   - Port range: `1-1000`
+   - Multiple ports: `80,443,22,21`
+   - Combined: `1-100,443,8080`
+3. **Select Protocol**: Choose TCP, UDP, or TCP/UDP
+4. **Click "Check Ports"** to start scanning
 
-### Port Specification Examples
+### Advanced Features
+
+#### Search and Filter
+- Use the **Search** box to filter results in real-time
+- Search works across port numbers, protocols, status, and service names
+- Results update automatically as you type
+
+#### Sorting Results
+- Click any column header to sort results
+- **Port** and **Response Time** columns sort numerically
+- **Protocol**, **Status**, and **Service** columns sort alphabetically
+- Click again to reverse sort order (indicated by ↑↓ arrows)
+
+#### Configuration
+Access advanced settings via **Edit → Settings**:
+
+**General Tab:**
+- Scan protocol selection
+- Connection timeout adjustment
+- DNS retry count
+- Display options (show open ports only)
+
+**Defaults Tab:**
+- Set default host and port values
+- Quick setup for repeated scans
+
+**Export Tab:**
+- Enable/disable automatic result export
+- Choose export directory
+- Results saved to `psp_log.txt`
+
+## 📊 Sample Results
+
 ```
-22,80,443           # SSH, HTTP, HTTPS
-1-1000              # Ports 1 through 1000
-21,22,23,80-90      # FTP, SSH, Telnet, and range 80-90
-3389,5900,22        # RDP, VNC, SSH
+Port    Protocol    Status    Service      Response Time
+22      TCP         OPEN      ssh          15.2ms
+80      TCP         OPEN      http         8.7ms
+443     TCP         OPEN      https        12.1ms
+8080    TCP         CLOSED    http-proxy   -
 ```
 
-### Settings Configuration
+## ⚙️ Configuration Files
 
-#### General Tab
-- **Scan Protocol**: Choose between TCP, UDP, or TCP/UDP scanning
-- **Connection Timeout**: Set timeout for connection attempts (0.1-10.0 seconds)
-- **DNS Retry Count**: Configure hostname resolution retry attempts (0-5)
-- **Display Options**: Toggle to show only open ports in results
-
-#### Defaults Tab
-- **Default Host**: Set a default hostname or IP address
-- **Default Ports**: Set default port ranges for quick scanning
-
-#### Export Tab
-- **Enable Export**: Automatically save scan results to files
-- **Export Directory**: Choose where to save result files
-- **File Format**: Results saved as `psp_log.txt` with timestamps
-
-## 🔧 Configuration
-
-Configuration is automatically saved in platform-appropriate locations:
-- **Windows**: `%APPDATA%/PortCheckerPlus/config.json`
+Configuration is automatically stored in platform-appropriate locations:
+- **Windows**: `%APPDATA%\PortCheckerPlus\config.json`
 - **macOS**: `~/Library/Application Support/PortCheckerPlus/config.json`
 - **Linux**: `~/.config/PortCheckerPlus/config.json`
 
-### Default Configuration
-```json
-{
-    "timeout": 0.3,
-    "export_results": false,
-    "export_directory": "current_directory",
-    "default_host": "",
-    "default_ports": "",
-    "retry_count": 2,
-    "scan_protocol": "TCP",
-    "show_open_only": false
-}
-```
+## 🛠️ Building Executable
 
-## 📊 Output Format
-
-### Console Output
-```
-Resolving hostname: example.com
-Resolved IP: 93.184.216.34
-Attempt: 1
-
-TCP Port 22 is CLOSED (Service: ssh)
-TCP Port 80 is OPEN (Service: http)
-TCP Port 443 is OPEN (Service: https)
-
-Scan complete.
-Number of ports checked: 3
-```
-
-### Export File Format
-```
-===== Scan Results: 2025-05-27 14:30:15 =====
-Host: example.com
-Resolved IP: 93.184.216.34
-Ports: 22,80,443
-
-TCP Port 22 is CLOSED (Service: ssh)
-TCP Port 80 is OPEN (Service: http)
-TCP Port 443 is OPEN (Service: https)
-```
-
-## 🛠️ Building from Source
-
-### Creating Standalone Executable
-Use PyInstaller to create a standalone executable:
+To create a standalone executable using PyInstaller:
 
 ```bash
-# Install PyInstaller
 pip install pyinstaller
-
-# Build executable (with icon if available)
 pyinstaller --onefile --windowed --icon=psp_icon2.ico portCheckerPlus.py
-
-# The executable will be in the dist/ directory
 ```
 
-### Dependencies
-- **tkinter**: GUI framework (included with Python)
-- **socket**: Network operations (built-in)
-- **threading**: Multi-threaded scanning (built-in)
-- **json**: Configuration management (built-in)
+## 🎨 Customization
+
+### Adding Custom Icons
+Place your icon file as `psp_icon2.ico` in the same directory as the script for custom window icons.
+
+### Modifying Colors
+Edit the color configuration in the `run_gui()` function:
+```python
+root.results_tree.tag_configure("open", foreground="#27ae60")  # Green for open ports
+root.results_tree.tag_configure("closed", foreground="#7f8c8d")  # Gray for closed ports
+```
+
+## 🐛 Troubleshooting
+
+### Common Issues
+
+**DNS Resolution Fails**
+- Check network connectivity
+- Verify hostname spelling
+- Increase DNS retry count in settings
+
+**Slow Scanning**
+- Reduce timeout value for faster scans
+- Use smaller port ranges
+- Check network latency to target
+
+**Export Issues**
+- Verify export directory exists and is writable
+- Check disk space availability
+- Ensure proper file permissions
 
 ## 🤝 Contributing
 
@@ -156,37 +158,35 @@ Contributions are welcome! Please feel free to submit a Pull Request. For major 
 ### Development Setup
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
-3. Make your changes
-4. Test thoroughly
-5. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-6. Push to the branch (`git push origin feature/AmazingFeature`)
-7. Open a Pull Request
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
 
 ## 📋 Roadmap
 
 - [ ] IPv6 support
-- [ ] Custom port scan profiles
+- [ ] Service banner grabbing
 - [ ] Network range scanning (CIDR notation)
-- [ ] XML/JSON export formats
+- [ ] CSV/JSON export formats
 - [ ] Scan scheduling and automation
-- [ ] Performance optimization for large port ranges
-- [ ] Plugin system for custom protocols
+- [ ] Dark mode theme
+- [ ] Scan profiles and templates
 
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
+## 👤 Author
+
+**Jack Worthen**
+- GitHub: [@jackworthen](https://github.com/jackworthen)
+
 ## 🙏 Acknowledgments
 
-- Built with Python's tkinter for cross-platform GUI compatibility
-- Inspired by traditional network scanning tools like nmap
-- Icons and design influenced by modern application interfaces
-
-## 📞 Support
-
-If you encounter any problems or have suggestions:
-- Open an [issue](https://github.com/jackworthen/port-checker-plus/issues)
+- Built with Python's tkinter for cross-platform GUI
+- Socket programming for network connectivity testing
+- Threading implementation for performance optimization
 
 ---
 
-**Port Checker Plus** - Professional port scanning made simple and accessible.
+⭐ Star this repository if you found it helpful!
