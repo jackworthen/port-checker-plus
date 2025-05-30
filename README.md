@@ -117,7 +117,8 @@ To create a standalone executable using PyInstaller:
 
 ```bash
 pip install pyinstaller
-pyinstaller --onefile --windowed --icon=psp_icon2.ico portCheckerPlus.py
+pyinstaller --name "Port Checker Plus" --noconfirm --onefile --windowed --add-data "psp_icon2.ico;." --icon=psp_icon2.ico portCheckerPlus.py
+
 ```
 
 ## 🎨 Customization
