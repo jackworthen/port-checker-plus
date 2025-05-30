@@ -2,7 +2,7 @@ import socket
 import threading
 import tkinter as tk
 from tkinter import ttk
-from tkinter import messagebox, scrolledtext, filedialog, Menu
+from tkinter import messagebox, filedialog, Menu
 import json
 import os
 from datetime import datetime
@@ -40,8 +40,11 @@ default_config = {
     "default_host": "",
     "default_ports": "",
     "retry_count": 2,
-    "scan_protocol": "TCP"
+    "scan_protocol": "TCP",
+    "show_open_only": False
 }
+
+# Port categorization removed - all open ports will be green
 
 def load_config():
     if os.path.exists(CONFIG_PATH):
@@ -343,14 +346,11 @@ def open_settings_window(root, config):
     y = (settings_win.winfo_screenheight() // 2) - (settings_win.winfo_height() // 2)
     settings_win.geometry(f"+{x}+{y}")
 
-def resolve_hostname_and_print(host, output_widget, config):
+def resolve_hostname_and_print(host, results_tree, config):
     retries = config.get("retry_count", 2)
     for attempt in range(retries + 1):
         try:
-            output_widget.insert(tk.END, f"Resolving hostname: {host}\n")
             resolved_ip = socket.gethostbyname(host)
-            output_widget.insert(tk.END, f"Resolved IP: {resolved_ip}\n")
-            output_widget.insert(tk.END, f"Attempt: {attempt + 1}\n\n")
             return resolved_ip
         except socket.gaierror as e:
             if attempt == retries:
@@ -363,11 +363,19 @@ file_lock = threading.Lock()
 def get_export_file_path(config):
     return os.path.join(config["export_directory"], "psp_log.txt")
 
-def scan_port_with_export(host, port, output_widget, config, export_file_path):
+def get_port_category(port):
+    """All ports use the same category now - simplified"""
+    return "normal"
+
+def scan_port_with_export(host, port, results_tree, config, export_file_path, scan_results):
     try:
+        start_time = time.time()
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.settimeout(config.get("timeout", 0.3))
             result = sock.connect_ex((host, port))
+            end_time = time.time()
+            response_time = round((end_time - start_time) * 1000, 1)  # Convert to ms
+            
             status = "OPEN" if result == 0 else "CLOSED"
 
         try:
@@ -375,14 +383,23 @@ def scan_port_with_export(host, port, output_widget, config, export_file_path):
         except:
             service = 'Unknown'
 
-        message = f"TCP Port {port} is {status} (Service: {service})\n"
+        # Create result data
+        result_data = {
+            'port': port,
+            'protocol': 'TCP',
+            'status': status,
+            'service': service,
+            'response_time': response_time if status == "OPEN" else 0,
+            'category': get_port_category(port)
+        }
 
         if config.get("show_open_only", False) and status != "OPEN":
             return
 
-        output_widget.after(0, lambda: output_widget.insert(
-            tk.END, message, "open" if status == "OPEN" else None))
+        # Store result for later insertion into tree
+        scan_results.append(result_data)
 
+        message = f"TCP Port {port} is {status} (Service: {service})\n"
         if config.get("export_results", False):
             os.makedirs(os.path.dirname(export_file_path), exist_ok=True)
             with file_lock:
@@ -390,32 +407,54 @@ def scan_port_with_export(host, port, output_widget, config, export_file_path):
                     f.write(message)
 
     except Exception as e:
+        error_data = {
+            'port': port,
+            'protocol': 'TCP',
+            'status': 'ERROR',
+            'service': str(e),
+            'response_time': 0,
+            'category': 'error'
+        }
+        scan_results.append(error_data)
+        
         error_msg = f"Error on TCP port {port}: {e}\n"
-        output_widget.after(0, lambda: output_widget.insert(tk.END, error_msg))
         if config.get("export_results", False):
             os.makedirs(os.path.dirname(export_file_path), exist_ok=True)
             with file_lock:
                 with open(config.get("_current_export_file", export_file_path), "a") as f:
                     f.write(error_msg)
 
-def scan_udp_port(host, port, output_widget, config, export_file_path):
+def scan_udp_port(host, port, results_tree, config, export_file_path, scan_results):
     try:
+        start_time = time.time()
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
             sock.settimeout(config.get("timeout", 0.3))
             sock.sendto(b"", (host, port))
             try:
                 data, _ = sock.recvfrom(1024)
-                status = "OPEN (responded)"
+                status = "OPEN"
+                end_time = time.time()
+                response_time = round((end_time - start_time) * 1000, 1)
             except socket.timeout:
-                status = "OPEN|FILTERED (no response)"
+                status = "OPEN|FILTERED"
+                end_time = time.time()
+                response_time = round((end_time - start_time) * 1000, 1)
         
-        message = f"UDP Port {port} is {status}\n"
+        result_data = {
+            'port': port,
+            'protocol': 'UDP',
+            'status': status,
+            'service': 'Unknown',
+            'response_time': response_time if "OPEN" in status else 0,
+            'category': get_port_category(port)
+        }
 
         if config.get("show_open_only", False) and "OPEN" not in status:
             return
 
-        output_widget.after(0, lambda: output_widget.insert(tk.END, message, "open" if "OPEN" in status else None))
+        scan_results.append(result_data)
 
+        message = f"UDP Port {port} is {status}\n"
         if config.get("export_results", False):
             os.makedirs(os.path.dirname(export_file_path), exist_ok=True)
             with file_lock:
@@ -424,15 +463,48 @@ def scan_udp_port(host, port, output_widget, config, export_file_path):
 
     except Exception as e:
         if not config.get("show_open_only", False):
+            error_data = {
+                'port': port,
+                'protocol': 'UDP',
+                'status': 'ERROR',
+                'service': str(e),
+                'response_time': 0,
+                'category': 'error'
+            }
+            scan_results.append(error_data)
+            
             error_msg = f"Error on UDP port {port}: {e}\n"
-            output_widget.after(0, lambda: output_widget.insert(tk.END, error_msg))
             if config.get("export_results", False):
                 os.makedirs(os.path.dirname(export_file_path), exist_ok=True)
                 with file_lock:
                     with open(config.get("_current_export_file", export_file_path), "a") as f:
                         f.write(error_msg)
 
-def check_ports_threaded_with_export(host, ports, output_widget, clear_button, config):
+def update_results_tree(results_tree, scan_results):
+    """Update the results tree with scan data and apply color coding"""
+    for result in scan_results:
+        values = (
+            result['port'],
+            result['protocol'],
+            result['status'],
+            result['service'],
+            f"{result['response_time']}ms" if result['response_time'] > 0 else "-"
+        )
+        
+        # Insert item with appropriate tag for color coding
+        tag = ""
+        if result['status'] == 'OPEN':
+            tag = "open"
+        elif result['status'] == 'CLOSED':
+            tag = "closed"
+        elif result['status'] == 'ERROR':
+            tag = "error"
+        else:
+            tag = "filtered"
+            
+        results_tree.insert("", "end", values=values, tags=(tag,))
+
+def check_ports_threaded_with_export(host, ports, results_tree, clear_button, config):
     clear_button.config(state=tk.NORMAL)
     export_file_path = get_export_file_path(config) if config.get("export_results") else None
 
@@ -447,6 +519,8 @@ def check_ports_threaded_with_export(host, ports, output_widget, clear_button, c
 
     counter = {"count": 0}
     counter_lock = threading.Lock()
+    scan_results = []
+    results_lock = threading.Lock()
 
     def on_port_done():
         with counter_lock:
@@ -457,19 +531,22 @@ def check_ports_threaded_with_export(host, ports, output_widget, clear_button, c
             root.status_label.config(text=f"{counter['count']} of {total_scans} ports scanned")
             
             if counter["count"] == total_scans:
-                output_widget.after(0, lambda: output_widget.insert(tk.END, f"\nScan complete.\nNumber of ports checked: {len(ports)}\n"))
-                # Reset progress bar and status after completion
-                root.after(2000, lambda: (root.progress_var.set(0), root.status_label.config(text="Ready")))
+                # Update the results tree when scanning is complete
+                results_tree.after(0, lambda: update_results_tree(results_tree, scan_results))
+                # Update status label with completion message
+                root.status_label.config(text=f"Scan complete - {len(ports)} ports checked")
+                # Reset progress bar after completion
+                root.after(3000, lambda: (root.progress_var.set(0), root.status_label.config(text="Ready")))
 
     def run_tcp_scan(p):
         try:
-            scan_port_with_export(host, p, output_widget, config, export_file_path)
+            scan_port_with_export(host, p, results_tree, config, export_file_path, scan_results)
         finally:
             on_port_done()
 
     def run_udp_scan(p):
         try:
-            scan_udp_port(host, p, output_widget, config, export_file_path)
+            scan_udp_port(host, p, results_tree, config, export_file_path, scan_results)
         finally:
             on_port_done()
 
@@ -488,8 +565,10 @@ def on_check_ports_with_export():
         messagebox.showwarning("Input Error", "Please enter both host and port(s).")
         return
 
-    root.output_text.delete("1.0", tk.END)
-    resolved_ip = resolve_hostname_and_print(host, root.output_text, config)
+    # Clear results tree
+    clear_results_tree()
+    
+    resolved_ip = resolve_hostname_and_print(host, root.results_tree, config)
     if resolved_ip and config.get("export_results"):
         export_file_path = get_export_file_path(config)
         try:
@@ -512,25 +591,77 @@ def on_check_ports_with_export():
             
         root.clear_button.config(state=tk.DISABLED)
         
-        # Initialize progress bar
+        # Initialize progress bar and show scanning status
         root.progress_var.set(0)
-        root.status_label.config(text="Starting scan...")
+        root.status_label.config(text=f"Scanning {host} ({resolved_ip}) - {len(ports)} ports...")
         
         threading.Thread(
             target=check_ports_threaded_with_export,
-            args=(host, ports, root.output_text, root.clear_button, config),
+            args=(host, ports, root.results_tree, root.clear_button, config),
             daemon=True
         ).start()
         root.clear_button.config(state=tk.NORMAL)
     except Exception as e:
         messagebox.showerror("Error", str(e))
 
-def on_clear_output():
-    root.output_text.delete("1.0", tk.END)
+def clear_results_tree():
+    """Clear the results tree"""
+    for item in root.results_tree.get_children():
+        root.results_tree.delete(item)
     root.clear_button.config(state=tk.DISABLED)
     # Reset progress bar and status when clearing
     root.progress_var.set(0)
     root.status_label.config(text="Ready")
+
+def sort_treeview(tree, col, reverse):
+    """Sort treeview by column"""
+    data = [(tree.set(child, col), child) for child in tree.get_children('')]
+    
+    # Handle numeric sorting for port and response time columns
+    if col in ['Port', 'Response Time']:
+        try:
+            data.sort(key=lambda x: int(x[0].replace('ms', '').replace('-', '0')), reverse=reverse)
+        except ValueError:
+            data.sort(reverse=reverse)
+    else:
+        data.sort(reverse=reverse)
+    
+    for index, (val, child) in enumerate(data):
+        tree.move(child, '', index)
+    
+    # Update column heading to show sort direction
+    for column in ['Port', 'Protocol', 'Status', 'Service', 'Response Time']:
+        if column == col:
+            tree.heading(column, text=f"{column} {'↓' if reverse else '↑'}")
+        else:
+            tree.heading(column, text=column)
+
+def filter_results():
+    """Filter results based on search criteria"""
+    search_term = root.search_var.get().lower()
+    
+    # Show all items first
+    for item in root.results_tree.get_children():
+        root.results_tree.item(item, tags=root.results_tree.item(item)['tags'])
+    
+    # Apply search filter
+    for item in root.results_tree.get_children():
+        values = root.results_tree.item(item)['values']
+        if not values or len(values) < 5:
+            continue
+            
+        port, protocol, status, service, response_time = values
+        
+        # Text search filter
+        show_item = True
+        if search_term:
+            searchable_text = f"{port} {protocol} {status} {service}".lower()
+            if search_term not in searchable_text:
+                show_item = False
+        
+        # Hide item if it doesn't match filters
+        if not show_item:
+            root.results_tree.item(item, tags=("hidden",))
 
 def set_window_icon(window):
     """Set the window icon, handling PyInstaller bundling"""
@@ -560,7 +691,7 @@ def run_gui():
     set_window_icon(root)
     root.title("Port Checker Plus")
     root.configure(bg="#f8f8f8")
-    root.geometry("600x600")  # main window size
+    root.geometry("800x700")  # Increased size for better table display
 
     menubar = Menu(root)
     file_menu = Menu(menubar, tearoff=0)
@@ -572,39 +703,103 @@ def run_gui():
     menubar.add_cascade(label="Edit", menu=edit_menu)
     root.config(menu=menubar)
 
-    host_frame = tk.Frame(root, bg="#f8f8f8")
-    host_frame.pack(padx=12, pady=(15, 5), fill="x")
+    # Input section
+    input_frame = tk.Frame(root, bg="#f8f8f8")
+    input_frame.pack(padx=12, pady=(15, 10), fill="x")
+
+    # Host input
+    host_frame = tk.Frame(input_frame, bg="#f8f8f8")
+    host_frame.pack(fill="x", pady=(0, 5))
     tk.Label(host_frame, text="Host:", bg="#f8f8f8", font=("Segoe UI", 10)).pack(side="left")
     root.host_entry = tk.Entry(host_frame, width=40, font=("Segoe UI", 10))
     root.host_entry.pack(side="left", padx=(8, 0), fill="x", expand=True)
     root.host_entry.insert(0, config.get("default_host", ""))
 
-    port_frame = tk.Frame(root, bg="#f8f8f8")
-    port_frame.pack(padx=12, pady=5, fill="x")
+    # Ports and protocol input
+    port_protocol_frame = tk.Frame(input_frame, bg="#f8f8f8")
+    port_protocol_frame.pack(fill="x", pady=5)
 
-    protocol_frame = tk.Frame(root, bg="#f8f8f8")
-    protocol_frame.pack(padx=12, pady=(5, 5), fill="x")
-    tk.Label(protocol_frame, text="Protocol:", bg="#f8f8f8", font=("Segoe UI", 10)).pack(side="left")
-    root.protocol_var = tk.StringVar(value=config.get("scan_protocol", "TCP"))
-    protocol_options = ["TCP", "UDP", "TCP/UDP"]
-    root.protocol_menu = ttk.Combobox(protocol_frame, textvariable=root.protocol_var, values=protocol_options, state="readonly", width=10)
-    root.protocol_menu.pack(side="left", padx=(8, 0))
-
-    tk.Label(port_frame, text="Ports:", bg="#f8f8f8", font=("Segoe UI", 10)).pack(side="left")
-    root.ports_entry = tk.Entry(port_frame, width=40, font=("Segoe UI", 10))
-    root.ports_entry.pack(side="left", padx=(8, 0), fill="x", expand=True)
+    # Ports
+    tk.Label(port_protocol_frame, text="Ports:", bg="#f8f8f8", font=("Segoe UI", 10)).pack(side="left")
+    root.ports_entry = tk.Entry(port_protocol_frame, width=30, font=("Segoe UI", 10))
+    root.ports_entry.pack(side="left", padx=(8, 20), fill="x", expand=True)
     root.ports_entry.insert(0, config.get("default_ports", ""))
 
-    button_frame = tk.Frame(root, bg="#f8f8f8")
-    button_frame.pack(padx=12, pady=(5, 10), fill="x")
-    check_button = tk.Button(button_frame, text="Check Ports", font=("Segoe UI", 10), command=on_check_ports_with_export)
-    check_button.pack(side="left", padx=(0, 5))
-    root.clear_button = tk.Button(button_frame, text="Clear Results", font=("Segoe UI", 10), command=on_clear_output, state=tk.DISABLED)
+    # Protocol
+    tk.Label(port_protocol_frame, text="Protocol:", bg="#f8f8f8", font=("Segoe UI", 10)).pack(side="left")
+    root.protocol_var = tk.StringVar(value=config.get("scan_protocol", "TCP"))
+    protocol_options = ["TCP", "UDP", "TCP/UDP"]
+    root.protocol_menu = ttk.Combobox(port_protocol_frame, textvariable=root.protocol_var, 
+                                     values=protocol_options, state="readonly", width=10)
+    root.protocol_menu.pack(side="left", padx=(8, 0))
+
+    # Buttons
+    button_frame = tk.Frame(input_frame, bg="#f8f8f8")
+    button_frame.pack(fill="x", pady=(10, 0))
+    check_button = tk.Button(button_frame, text="Check Ports", font=("Segoe UI", 10), 
+                            command=on_check_ports_with_export, bg="#3498db", fg="white",
+                            activebackground="#2980b9", relief="flat", padx=20, pady=5)
+    check_button.pack(side="left", padx=(0, 10))
+    root.clear_button = tk.Button(button_frame, text="Clear Results", font=("Segoe UI", 10), 
+                                 command=clear_results_tree, state=tk.DISABLED, bg="#95a5a6", 
+                                 fg="white", activebackground="#7f8c8d", relief="flat", padx=20, pady=5)
     root.clear_button.pack(side="left")
 
-    root.output_text = scrolledtext.ScrolledText(root, font=("Courier", 10), width=70, height=20, wrap="none")
-    root.output_text.pack(padx=12, pady=10, fill="both", expand=True)
-    root.output_text.tag_config('open', foreground='green')
+    # Filter section
+    filter_frame = tk.LabelFrame(root, text="Search Results", bg="#f8f8f8", font=("Segoe UI", 10, "bold"))
+    filter_frame.pack(padx=12, pady=(0, 10), fill="x")
+
+    filter_content = tk.Frame(filter_frame, bg="#f8f8f8")
+    filter_content.pack(padx=10, pady=5, fill="x")
+
+    # Search box
+    tk.Label(filter_content, text="Search:", bg="#f8f8f8", font=("Segoe UI", 10)).pack(side="left")
+    root.search_var = tk.StringVar()
+    search_entry = tk.Entry(filter_content, textvariable=root.search_var, font=("Segoe UI", 10), width=30)
+    search_entry.pack(side="left", padx=(5, 0))
+    search_entry.bind('<KeyRelease>', lambda e: filter_results())
+
+    # Results tree view
+    results_frame = tk.Frame(root, bg="#f8f8f8")
+    results_frame.pack(padx=12, pady=(0, 10), fill="both", expand=True)
+
+    # Create Treeview with columns
+    columns = ('Port', 'Protocol', 'Status', 'Service', 'Response Time')
+    root.results_tree = ttk.Treeview(results_frame, columns=columns, show='headings', height=15)
+
+    # Define column properties
+    root.results_tree.column('Port', width=80, anchor='center')
+    root.results_tree.column('Protocol', width=80, anchor='center')
+    root.results_tree.column('Status', width=120, anchor='center')
+    root.results_tree.column('Service', width=150, anchor='w')
+    root.results_tree.column('Response Time', width=100, anchor='center')
+
+    # Configure column headings with sorting
+    for col in columns:
+        root.results_tree.heading(col, text=col, 
+                                 command=lambda c=col: sort_treeview(root.results_tree, c, False))
+
+    # Add scrollbars using grid layout
+    root.results_tree.grid(row=0, column=0, sticky="nsew")
+    
+    v_scrollbar = ttk.Scrollbar(results_frame, orient="vertical", command=root.results_tree.yview)
+    v_scrollbar.grid(row=0, column=1, sticky="ns")
+    root.results_tree.configure(yscrollcommand=v_scrollbar.set)
+    
+    h_scrollbar = ttk.Scrollbar(results_frame, orient="horizontal", command=root.results_tree.xview)
+    h_scrollbar.grid(row=1, column=0, sticky="ew")
+    root.results_tree.configure(xscrollcommand=h_scrollbar.set)
+
+    # Configure grid weights
+    results_frame.grid_rowconfigure(0, weight=1)
+    results_frame.grid_columnconfigure(0, weight=1)
+
+    # Configure tags for color coding
+    root.results_tree.tag_configure("open", foreground="#27ae60", font=("Segoe UI", 10, "bold"))
+    root.results_tree.tag_configure("closed", foreground="#7f8c8d")
+    root.results_tree.tag_configure("filtered", foreground="#9b59b6")
+    root.results_tree.tag_configure("error", foreground="#e74c3c", font=("Segoe UI", 10, "italic"))
+    root.results_tree.tag_configure("hidden", foreground="#ffffff")
 
     # Progress bar and status frame
     progress_frame = tk.Frame(root, bg="#f8f8f8")
