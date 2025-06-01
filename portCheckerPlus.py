@@ -636,15 +636,28 @@ def sort_treeview(tree, col, reverse):
         else:
             tree.heading(column, text=column)
 
+def toggle_sort(col):
+    """Toggle sort direction for a column"""
+    # Initialize sort states if not exist
+    if not hasattr(root, 'sort_states'):
+        root.sort_states = {}
+    
+    # Toggle the sort state for this column (default to True so first click = False = ascending)
+    current_reverse = root.sort_states.get(col, True)
+    new_reverse = not current_reverse
+    root.sort_states[col] = new_reverse
+    
+    # Sort with the new direction
+    sort_treeview(root.results_tree, col, new_reverse)
+
 def filter_results():
     """Filter results based on search criteria"""
     search_term = root.search_var.get().lower()
     
-    # Show all items first
-    for item in root.results_tree.get_children():
-        root.results_tree.item(item, tags=root.results_tree.item(item)['tags'])
+    visible_items = []
+    hidden_items = []
     
-    # Apply search filter
+    # Categorize items based on search criteria
     for item in root.results_tree.get_children():
         values = root.results_tree.item(item)['values']
         if not values or len(values) < 5:
@@ -659,9 +672,25 @@ def filter_results():
             if search_term not in searchable_text:
                 show_item = False
         
-        # Hide item if it doesn't match filters
-        if not show_item:
-            root.results_tree.item(item, tags=("hidden",))
+        # Determine original tag based on status
+        if status == 'OPEN':
+            original_tag = "open"
+        elif status == 'CLOSED':
+            original_tag = "closed"
+        elif status == 'ERROR':
+            original_tag = "error"
+        else:
+            original_tag = "filtered"
+        
+        if show_item:
+            visible_items.append((item, original_tag))
+        else:
+            hidden_items.append((item, "hidden"))
+    
+    # Reorder items: visible items first, then hidden items
+    for index, (item, tag) in enumerate(visible_items + hidden_items):
+        root.results_tree.move(item, '', index)
+        root.results_tree.item(item, tags=(tag,))
 
 def set_window_icon(window):
     """Set the window icon, handling PyInstaller bundling"""
@@ -777,7 +806,7 @@ def run_gui():
     # Configure column headings with sorting
     for col in columns:
         root.results_tree.heading(col, text=col, 
-                                 command=lambda c=col: sort_treeview(root.results_tree, c, False))
+                                 command=lambda c=col: toggle_sort(c))
 
     # Add scrollbars using grid layout
     root.results_tree.grid(row=0, column=0, sticky="nsew")
