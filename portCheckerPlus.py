@@ -9,6 +9,7 @@ from datetime import datetime
 import platform
 from pathlib import Path
 import time
+import webbrowser
 
 import sys
 
@@ -153,6 +154,13 @@ def update_profile_indicator():
             bg=colors["bg"],
             fg=colors["fg"]
         )
+
+def open_documentation():
+    """Open the documentation URL in the default browser"""
+    try:
+        webbrowser.open("https://github.com/jackworthen/port-checker-plus")
+    except Exception as e:
+        messagebox.showerror("Error", f"Could not open documentation:\n{e}")
 
 def open_settings_window(root, config):
     settings_win = tk.Toplevel(root)
@@ -868,6 +876,11 @@ def run_gui():
     edit_menu = Menu(menubar, tearoff=0)
     edit_menu.add_command(label="🔧 Settings", command=lambda: open_settings_window(root, config))
     menubar.add_cascade(label="Edit", menu=edit_menu)
+
+    help_menu = Menu(menubar, tearoff=0)
+    help_menu.add_command(label="📖 Documentation", command=open_documentation)
+    menubar.add_cascade(label="Help", menu=help_menu)
+
     root.config(menu=menubar)
 
     # Input section
