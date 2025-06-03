@@ -44,6 +44,24 @@ default_config = {
     "show_open_only": False
 }
 
+# Define common port profiles
+PORT_PROFILES = {
+    "Custom": {"ports": "", "protocol": "TCP"},
+    "Web Servers": {"ports": "80,443,8080,8443,8000,8008,9000,9080", "protocol": "TCP"},
+    "Mail Servers": {"ports": "25,110,143,993,995,587,465,2525", "protocol": "TCP"},
+    "File Transfer": {"ports": "21,22,69,873,989,990,2049", "protocol": "TCP"},
+    "Database": {"ports": "1433,1521,3306,5432,27017,6379,11211,1521", "protocol": "TCP"},
+    "Network Services": {"ports": "53,67,68,123,161,162,514,520", "protocol": "UDP"},
+    "Remote Access": {"ports": "22,23,3389,5900,5901,5902,5800", "protocol": "TCP"},
+    "Gaming": {"ports": "27015,7777,25565,19132,28015,27017,28016", "protocol": "TCP/UDP"},
+    "Top 100 Common": {"ports": "7,9,13,21-23,25-26,37,53,79-81,88,106,110-111,113,119,135,139,143-144,179,199,389,427,443-445,993-995,1723,3306,3389,5632,5900,6000-6001,8000,8008,8080-8081,8443,8888,9100", "protocol": "TCP"},
+    "Security Scan": {"ports": "21,22,23,25,53,80,110,111,135,139,143,443,993,995,1723,3306,3389,5900,8080", "protocol": "TCP"},
+    "P2P/Torrent": {"ports": "6881-6889,51413,25401,6346,4662", "protocol": "TCP/UDP"},
+    "Streaming/Media": {"ports": "554,1935,8554,8080,1755,7070", "protocol": "TCP"},
+    "VPN Services": {"ports": "1194,500,4500,1723,1701", "protocol": "UDP"},
+    "Development": {"ports": "3000,3001,4000,5000,8000,8080,9000,5173,3001", "protocol": "TCP"}
+}
+
 # Port categorization removed - all open ports will be green
 
 def load_config():
@@ -90,7 +108,7 @@ def parse_ports(port_input):
 def open_settings_window(root, config):
     settings_win = tk.Toplevel(root)
     settings_win.title("Settings - Port Checker Plus")
-    settings_win.geometry("520x510")
+    settings_win.geometry("520x560")
     settings_win.configure(bg="#ffffff")
     settings_win.transient(root)
     settings_win.grab_set()
@@ -109,6 +127,75 @@ def open_settings_window(root, config):
     # Create notebook for tabbed interface
     notebook = ttk.Notebook(main_frame)
     notebook.pack(fill="both", expand=True, pady=(0, 20))
+
+    # ===== DEFAULTS TAB =====
+    defaults_frame = tk.Frame(notebook, bg="#ffffff")
+    notebook.add(defaults_frame, text="Defaults")
+
+    # Port Profiles Section
+    profiles_section = tk.LabelFrame(defaults_frame, text="Port Profiles", 
+                                    font=("Segoe UI", 10, "bold"), bg="#ffffff", 
+                                    fg="#34495e", padx=15, pady=10)
+    profiles_section.pack(fill="x", padx=15, pady=(15, 10))
+
+    # Profile selection
+    profile_frame = tk.Frame(profiles_section, bg="#ffffff")
+    profile_frame.pack(fill="x", pady=(5, 15))
+    
+    tk.Label(profile_frame, text="Select Profile:", font=("Segoe UI", 10), 
+             bg="#ffffff", fg="#2c3e50").pack(anchor="w", pady=(0, 5))
+    
+    # Function to determine which profile matches current config
+    def get_matching_profile():
+        current_ports = config.get("default_ports", "")
+        current_protocol = config.get("scan_protocol", "TCP")
+        
+        # Check if current config matches any predefined profile
+        for profile_name, profile_data in PORT_PROFILES.items():
+            if profile_name == "Custom":
+                continue
+            if (profile_data["ports"] == current_ports and 
+                profile_data["protocol"] == current_protocol):
+                return profile_name
+        
+        # If no match found, return Custom
+        return "Custom"
+    
+    # Set the profile variable to the matching profile
+    initial_profile = get_matching_profile()
+    profile_var = tk.StringVar(value=initial_profile)
+    profile_options = list(PORT_PROFILES.keys())
+    profile_combo = ttk.Combobox(profile_frame, textvariable=profile_var, 
+                                values=profile_options, state="readonly", 
+                                font=("Segoe UI", 10), width=25)
+    profile_combo.pack(anchor="w")
+
+    # Profile description
+    profile_desc = tk.Label(profiles_section, text="Select a predfined port range based on common services.", 
+                           font=("Segoe UI", 9), bg="#ffffff", fg="#7f8c8d", wraplength=450, justify="left")
+    profile_desc.pack(anchor="w", pady=(5, 0))
+
+    # Default Values Section
+    defaults_section = tk.LabelFrame(defaults_frame, text="Default Values", 
+                                    font=("Segoe UI", 10, "bold"), bg="#ffffff", 
+                                    fg="#34495e", padx=15, pady=10)
+    defaults_section.pack(fill="x", padx=15, pady=10)
+
+    # Default host
+    tk.Label(defaults_section, text="Default Host:", font=("Segoe UI", 10), 
+             bg="#ffffff", fg="#2c3e50").pack(anchor="w", pady=(5, 2))
+    host_entry = tk.Entry(defaults_section, font=("Segoe UI", 10), width=50)
+    host_entry.insert(0, config.get("default_host", ""))
+    host_entry.pack(fill="x", pady=(0, 15))
+
+    # Default ports
+    tk.Label(defaults_section, text="Default Ports:", font=("Segoe UI", 10), 
+             bg="#ffffff", fg="#2c3e50").pack(anchor="w", pady=(0, 2))
+    tk.Label(defaults_section, text="Examples: 80,443,22 or 1-100,8080", 
+             font=("Segoe UI", 9), bg="#ffffff", fg="#7f8c8d").pack(anchor="w")
+    ports_entry = tk.Entry(defaults_section, font=("Segoe UI", 10), width=50)
+    ports_entry.insert(0, config.get("default_ports", ""))
+    ports_entry.pack(fill="x", pady=(5, 0))
 
     # ===== GENERAL TAB =====
     general_frame = tk.Frame(notebook, bg="#ffffff")
@@ -131,6 +218,47 @@ def open_settings_window(root, config):
                                 values=protocol_options, state="readonly", width=12,
                                 font=("Segoe UI", 10))
     protocol_menu.pack(side="right")
+
+    # Store custom values - initialize with current config if we're starting in Custom mode
+    if initial_profile == "Custom":
+        custom_values = {
+            "ports": config.get("default_ports", ""),
+            "protocol": config.get("scan_protocol", "TCP")
+        }
+    else:
+        custom_values = {
+            "ports": "",
+            "protocol": "TCP"
+        }
+    
+    # Track if we're currently in custom mode to save user input
+    current_mode = {"is_custom": initial_profile == "Custom"}
+    
+    # Profile selection callback
+    def on_profile_change(event=None):
+        selected_profile = profile_var.get()
+        if selected_profile in PORT_PROFILES:
+            profile_data = PORT_PROFILES[selected_profile]
+            
+            # If we're switching FROM custom mode, save the current custom values
+            if current_mode["is_custom"] and selected_profile != "Custom":
+                custom_values["ports"] = ports_entry.get().strip()
+                custom_values["protocol"] = protocol_var.get()
+            
+            if selected_profile == "Custom":
+                # Set to saved custom values
+                ports_entry.delete(0, tk.END)
+                ports_entry.insert(0, custom_values["ports"])
+                protocol_var.set(custom_values["protocol"])
+                current_mode["is_custom"] = True
+            else:
+                # Update ports entry and protocol with profile data
+                ports_entry.delete(0, tk.END)
+                ports_entry.insert(0, profile_data["ports"])
+                protocol_var.set(profile_data["protocol"])
+                current_mode["is_custom"] = False
+
+    profile_combo.bind("<<ComboboxSelected>>", on_profile_change)
 
     # Timeout setting
     timeout_frame = tk.Frame(scan_section, bg="#ffffff")
@@ -161,41 +289,15 @@ def open_settings_window(root, config):
 
     show_open_only_var = tk.BooleanVar(value=config.get("show_open_only", False))
     show_open_check = tk.Checkbutton(display_section, 
-                                    text="Show only open ports in results", 
+                                    text="Only show OPEN ports", 
                                     variable=show_open_only_var,
                                     bg="#ffffff", font=("Segoe UI", 10), 
                                     fg="#2c3e50", activebackground="#ffffff")
     show_open_check.pack(anchor="w", pady=5)
 
-    # ===== DEFAULTS TAB =====
-    defaults_frame = tk.Frame(notebook, bg="#ffffff")
-    notebook.add(defaults_frame, text="Defaults")
-
-    # Default Values Section
-    defaults_section = tk.LabelFrame(defaults_frame, text="Default Values", 
-                                    font=("Segoe UI", 10, "bold"), bg="#ffffff", 
-                                    fg="#34495e", padx=15, pady=10)
-    defaults_section.pack(fill="x", padx=15, pady=(15, 10))
-
-    # Default host
-    tk.Label(defaults_section, text="Default Host:", font=("Segoe UI", 10), 
-             bg="#ffffff", fg="#2c3e50").pack(anchor="w", pady=(5, 2))
-    host_entry = tk.Entry(defaults_section, font=("Segoe UI", 10), width=50)
-    host_entry.insert(0, config.get("default_host", ""))
-    host_entry.pack(fill="x", pady=(0, 15))
-
-    # Default ports
-    tk.Label(defaults_section, text="Default Ports:", font=("Segoe UI", 10), 
-             bg="#ffffff", fg="#2c3e50").pack(anchor="w", pady=(0, 2))
-    tk.Label(defaults_section, text="Examples: 80,443,22 or 1-100,8080", 
-             font=("Segoe UI", 9), bg="#ffffff", fg="#7f8c8d").pack(anchor="w")
-    ports_entry = tk.Entry(defaults_section, font=("Segoe UI", 10), width=50)
-    ports_entry.insert(0, config.get("default_ports", ""))
-    ports_entry.pack(fill="x", pady=(5, 0))
-
     # ===== EXPORT TAB =====
     export_frame = tk.Frame(notebook, bg="#ffffff")
-    notebook.add(export_frame, text="Export")
+    notebook.add(export_frame, text="Logging")
 
     # Export Options Section
     export_section = tk.LabelFrame(export_frame, text="Export Options", 
@@ -205,7 +307,7 @@ def open_settings_window(root, config):
 
     export_var = tk.BooleanVar(value=config.get("export_results", False))
     export_check = tk.Checkbutton(export_section, 
-                                 text="Enable automatic export of scan results", 
+                                 text="Enable logging", 
                                  variable=export_var,
                                  bg="#ffffff", font=("Segoe UI", 10), 
                                  fg="#2c3e50", activebackground="#ffffff")
@@ -249,7 +351,7 @@ def open_settings_window(root, config):
 
     # Export file info
     info_label = tk.Label(export_section, 
-                         text="Results will be saved to 'portcheck_log.txt' in the selected directory",
+                         text="Log will be saved to 'portcheck_log.txt' in the selected directory",
                          font=("Segoe UI", 9), bg="#ffffff", fg="#7f8c8d")
     info_label.pack(anchor="w", pady=(5, 0))
 
