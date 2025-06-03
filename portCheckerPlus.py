@@ -105,6 +105,55 @@ def parse_ports(port_input):
                 continue
     return ports
 
+def get_matching_profile(config):
+    """Determine which profile matches current config"""
+    current_ports = config.get("default_ports", "")
+    current_protocol = config.get("scan_protocol", "TCP")
+    
+    # Check if current config matches any predefined profile
+    for profile_name, profile_data in PORT_PROFILES.items():
+        if profile_name == "Custom":
+            continue
+        if (profile_data["ports"] == current_ports and 
+            profile_data["protocol"] == current_protocol):
+            return profile_name
+    
+    # If no match found, return Custom
+    return "Custom"
+
+def get_profile_color(profile_name):
+    """Return color scheme for different profile types"""
+    color_map = {
+        "Custom": {"bg": "#e74c3c", "fg": "white"},
+        "Web Servers": {"bg": "#3498db", "fg": "white"},
+        "Mail Servers": {"bg": "#2ecc71", "fg": "white"},
+        "File Transfer": {"bg": "#f39c12", "fg": "white"},
+        "Database": {"bg": "#9b59b6", "fg": "white"},
+        "Network Services": {"bg": "#1abc9c", "fg": "white"},
+        "Remote Access": {"bg": "#e67e22", "fg": "white"},
+        "Gaming": {"bg": "#e91e63", "fg": "white"},
+        "Top 100 Common": {"bg": "#34495e", "fg": "white"},
+        "Security Scan": {"bg": "#8e44ad", "fg": "white"},
+        "P2P/Torrent": {"bg": "#16a085", "fg": "white"},
+        "Streaming/Media": {"bg": "#d35400", "fg": "white"},
+        "VPN Services": {"bg": "#27ae60", "fg": "white"},
+        "Development": {"bg": "#2980b9", "fg": "white"}
+    }
+    return color_map.get(profile_name, {"bg": "#95a5a6", "fg": "white"})
+
+def update_profile_indicator():
+    """Update the profile indicator label"""
+    if hasattr(root, 'profile_label'):
+        config = load_config()
+        current_profile = get_matching_profile(config)
+        colors = get_profile_color(current_profile)
+        
+        root.profile_label.config(
+            text=f" {current_profile} ",
+            bg=colors["bg"],
+            fg=colors["fg"]
+        )
+
 def open_settings_window(root, config):
     settings_win = tk.Toplevel(root)
     settings_win.title("Settings - Port Checker Plus")
@@ -145,24 +194,8 @@ def open_settings_window(root, config):
     tk.Label(profile_frame, text="Select Profile:", font=("Segoe UI", 10), 
              bg="#ffffff", fg="#2c3e50").pack(anchor="w", pady=(0, 5))
     
-    # Function to determine which profile matches current config
-    def get_matching_profile():
-        current_ports = config.get("default_ports", "")
-        current_protocol = config.get("scan_protocol", "TCP")
-        
-        # Check if current config matches any predefined profile
-        for profile_name, profile_data in PORT_PROFILES.items():
-            if profile_name == "Custom":
-                continue
-            if (profile_data["ports"] == current_ports and 
-                profile_data["protocol"] == current_protocol):
-                return profile_name
-        
-        # If no match found, return Custom
-        return "Custom"
-    
     # Set the profile variable to the matching profile
-    initial_profile = get_matching_profile()
+    initial_profile = get_matching_profile(config)
     profile_var = tk.StringVar(value=initial_profile)
     profile_options = list(PORT_PROFILES.keys())
     profile_combo = ttk.Combobox(profile_frame, textvariable=profile_var, 
@@ -424,6 +457,9 @@ def open_settings_window(root, config):
                 root.ports_entry.delete(0, tk.END)
                 root.ports_entry.insert(0, config["default_ports"])
                 root.protocol_var.set(config["scan_protocol"])
+                
+                # Update the profile indicator
+                update_profile_indicator()
 
             messagebox.showinfo("Settings Saved", "Your settings have been saved successfully.")
             settings_win.destroy()
@@ -874,7 +910,12 @@ def run_gui():
     root.clear_button = tk.Button(button_frame, text="Clear Results", font=("Segoe UI", 10), 
                                  command=clear_results_tree, state=tk.DISABLED, bg="#95a5a6", 
                                  fg="white", activebackground="#7f8c8d", relief="flat", padx=20, pady=5)
-    root.clear_button.pack(side="left")
+    root.clear_button.pack(side="left", padx=(0, 15))
+    
+    # Profile indicator label (positioned to the far right)
+    root.profile_label = tk.Label(button_frame, text="", font=("Segoe UI", 10, "bold"), 
+                                 relief="solid", padx=12, pady=5, borderwidth=1)
+    root.profile_label.pack(side="right")
 
     # Filter section
     filter_frame = tk.LabelFrame(root, text="Search Results", bg="#f8f8f8", font=("Segoe UI", 10, "bold"))
@@ -944,6 +985,9 @@ def run_gui():
     root.progress_var = tk.DoubleVar()
     root.progress_bar = ttk.Progressbar(progress_frame, variable=root.progress_var, maximum=100, length=200)
     root.progress_bar.pack(side="right", padx=(10, 0))
+
+    # Initialize the profile indicator
+    update_profile_indicator()
 
     root.mainloop()
 

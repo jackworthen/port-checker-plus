@@ -44,6 +44,8 @@ Choose from pre-configured port sets for common scenarios:
 | 🔐 **VPN Services** | 1194, 500, 4500, 1723... | VPN management |
 | 💻 **Development** | 3000, 4000, 5000, 8000... | Development servers |
 
+Currently selected profile will be displayed with a colorful label.
+
 ### 📊 **Advanced Features**
 - **Hostname resolution** with DNS retry logic
 - **Service detection** - automatically identifies running services
