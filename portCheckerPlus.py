@@ -249,7 +249,7 @@ def open_settings_window(root, config):
 
     # Export file info
     info_label = tk.Label(export_section, 
-                         text="Results will be saved to 'psp_log.txt' in the selected directory",
+                         text="Results will be saved to 'portcheck_log.txt' in the selected directory",
                          font=("Segoe UI", 9), bg="#ffffff", fg="#7f8c8d")
     info_label.pack(anchor="w", pady=(5, 0))
 
@@ -361,7 +361,7 @@ def resolve_hostname_and_print(host, results_tree, config):
 file_lock = threading.Lock()
 
 def get_export_file_path(config):
-    return os.path.join(config["export_directory"], "psp_log.txt")
+    return os.path.join(config["export_directory"], "portcheck_log.txt")
 
 def get_port_category(port):
     """All ports use the same category now - simplified"""

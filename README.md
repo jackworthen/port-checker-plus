@@ -92,7 +92,7 @@ Access advanced settings via **Edit → Settings**:
 **Export Tab:**
 - Enable/disable automatic result export
 - Choose export directory
-- Results saved to `psp_log.txt`
+- Results saved to `portcheck_log.txt`
 
 ## 📊 Sample Results
 
