@@ -47,7 +47,8 @@ default_config = {
     "retry_count": 2,
     "scan_protocol": "TCP",
     "show_open_only": False,
-    "randomize_ports": False  # Added for port randomization
+    "randomize_ports": False,  # Added for port randomization
+    "variable_delay_scan": False  # Added for variable delay scanning
 }
 
 # Define common port profiles
@@ -80,6 +81,8 @@ def load_config():
                     config["export_format"] = "TXT"
                 if "randomize_ports" not in config:
                     config["randomize_ports"] = False
+                if "variable_delay_scan" not in config:
+                    config["variable_delay_scan"] = False
                 return config
         except json.JSONDecodeError:
             pass
@@ -498,7 +501,7 @@ def open_settings_window(root, config):
 
     show_open_only_var = tk.BooleanVar(value=config.get("show_open_only", False))
     show_open_check = tk.Checkbutton(display_section, 
-                                    text="Only show OPEN ports", 
+                                    text="Only Show OPEN Ports", 
                                     variable=show_open_only_var,
                                     bg="#ffffff", font=("Segoe UI", 10), 
                                     fg="#2c3e50", activebackground="#ffffff")
@@ -517,18 +520,34 @@ def open_settings_window(root, config):
     # Port randomization option
     randomize_ports_var = tk.BooleanVar(value=config.get("randomize_ports", False))
     randomize_check = tk.Checkbutton(stealth_section, 
-                                    text="Randomize port scan", 
+                                    text="Randomize Ports", 
                                     variable=randomize_ports_var,
                                     bg="#ffffff", font=("Segoe UI", 10), 
                                     fg="#2c3e50", activebackground="#ffffff")
-    randomize_check.pack(anchor="w", pady=(5, 10))
+    randomize_check.pack(anchor="w", pady=(5, 5))
 
     # Description for randomization
     randomize_desc = tk.Label(stealth_section, 
-                             text="Helps avoid detection by pattern-matching systems and firewalls.", 
+                             text="Randomizes the order in which ports are scanned.", 
                              font=("Segoe UI", 9), bg="#ffffff", fg="#7f8c8d", 
                              wraplength=450, justify="left")
-    randomize_desc.pack(anchor="w", pady=(0, 10))
+    randomize_desc.pack(anchor="w", pady=(0, 15))
+
+    # Variable delay scan option
+    variable_delay_var = tk.BooleanVar(value=config.get("variable_delay_scan", False))
+    variable_delay_check = tk.Checkbutton(stealth_section, 
+                                         text="Variable Delay Scan", 
+                                         variable=variable_delay_var,
+                                         bg="#ffffff", font=("Segoe UI", 10), 
+                                         fg="#2c3e50", activebackground="#ffffff")
+    variable_delay_check.pack(anchor="w", pady=(5, 5))
+
+    # Description for variable delay
+    delay_desc = tk.Label(stealth_section, 
+                         text="Adds random delays (300-700ms) between port scans to avoid rate limiting.", 
+                         font=("Segoe UI", 9), bg="#ffffff", fg="#7f8c8d", 
+                         wraplength=450, justify="left")
+    delay_desc.pack(anchor="w", pady=(0, 15))
 
     # Warning note
     warning_label = tk.Label(stealth_section, 
@@ -549,7 +568,7 @@ def open_settings_window(root, config):
 
     export_var = tk.BooleanVar(value=config.get("export_results", False))
     export_check = tk.Checkbutton(export_section, 
-                                 text="Enable logging", 
+                                 text="Enable Logging", 
                                  variable=export_var,
                                  bg="#ffffff", font=("Segoe UI", 10), 
                                  fg="#2c3e50", activebackground="#ffffff")
@@ -764,6 +783,7 @@ def open_settings_window(root, config):
             config["default_ports"] = port_input
             config["scan_protocol"] = protocol_var.get()
             config["randomize_ports"] = randomize_ports_var.get()  # Save port randomization setting
+            config["variable_delay_scan"] = variable_delay_var.get()  # Save variable delay setting
             
             if export_var.get():
                 config["export_directory"] = dir_entry.get().strip()
@@ -824,6 +844,12 @@ def get_port_category(port):
 
 def scan_port_with_export(host, port, results_tree, config, scan_results):
     try:
+        # Add variable delay if enabled
+        if config.get("variable_delay_scan", False):
+            base_delay = 0.2  # Base delay of 200ms
+            jitter = random.uniform(0.1, 0.5)  # Random jitter between 100-500ms
+            time.sleep(base_delay + jitter)  # Total delay: 300-700ms
+        
         start_time = time.time()
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.settimeout(config.get("timeout", 0.3))
@@ -869,6 +895,12 @@ def scan_port_with_export(host, port, results_tree, config, scan_results):
 
 def scan_udp_port(host, port, results_tree, config, scan_results):
     try:
+        # Add variable delay if enabled
+        if config.get("variable_delay_scan", False):
+            base_delay = 0.2  # Base delay of 200ms
+            jitter = random.uniform(0.1, 0.5)  # Random jitter between 100-500ms
+            time.sleep(base_delay + jitter)  # Total delay: 300-700ms
+        
         start_time = time.time()
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
             sock.settimeout(config.get("timeout", 0.3))
@@ -1027,6 +1059,8 @@ def on_check_ports_with_export():
         scan_status = f"Scanning {host} ({resolved_ip}) - {len(ports)} ports..."
         if config.get("randomize_ports", False):
             scan_status += " (randomized order)"
+        if config.get("variable_delay_scan", False):
+            scan_status += " (with delays)"
         root.status_label.config(text=scan_status)
         
         # Prepare scan data for export
