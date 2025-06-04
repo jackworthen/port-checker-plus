@@ -56,12 +56,7 @@ Currently selected profile will be displayed with a colorful label.
 
 ## 🚀 Installation
 
-### Option 1: Download Executable (Easiest)
-1. Go to the [Releases](https://github.com/jackworthen/port-checker-plus/releases) page
-2. Download the latest executable for your operating system
-3. Run and enjoy! 🎉
-
-### Option 2: Run from Source
+### Run from Source
 ```bash
 # Clone the repository
 git clone https://github.com/jackworthen/port-checker-plus.git
