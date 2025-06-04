@@ -273,15 +273,6 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 
 ---
 
-## 🙏 Acknowledgments
-
-- 🐍 **Python Community** - For the amazing standard library
-- 🖼️ **Tkinter Team** - For the GUI framework that keeps on giving
-- 🌐 **Network Admins** - For inspiring the port profiles
-- 🔒 **Security Professionals** - For valuable feedback and testing
-
----
-
 ### 🌟 **Star this repo if you find it useful!** ⭐
 
 *Developed by [jackworthen](https://github.com/jackworthen)**
