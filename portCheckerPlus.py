@@ -12,6 +12,7 @@ import time
 import webbrowser
 import csv
 import xml.etree.ElementTree as ET
+import random  # Added for port randomization
 
 import sys
 
@@ -45,7 +46,8 @@ default_config = {
     "default_ports": "",
     "retry_count": 2,
     "scan_protocol": "TCP",
-    "show_open_only": False
+    "show_open_only": False,
+    "randomize_ports": False  # Added for port randomization
 }
 
 # Define common port profiles
@@ -73,9 +75,11 @@ def load_config():
         try:
             with open(CONFIG_PATH, "r") as f:
                 config = json.load(f)
-                # Ensure new export_format key exists
+                # Ensure new keys exist
                 if "export_format" not in config:
                     config["export_format"] = "TXT"
+                if "randomize_ports" not in config:
+                    config["randomize_ports"] = False
                 return config
         except json.JSONDecodeError:
             pass
@@ -329,7 +333,7 @@ def export_to_xml(file_path, scan_data, scan_results):
 def open_settings_window(root, config):
     settings_win = tk.Toplevel(root)
     settings_win.title("Settings - Port Checker Plus")
-    settings_win.geometry("520x600")  # Increased height for new dropdown
+    settings_win.geometry("520x650")  # Increased height for new tab
     settings_win.configure(bg="#ffffff")
     settings_win.transient(root)
     settings_win.grab_set()
@@ -499,6 +503,39 @@ def open_settings_window(root, config):
                                     bg="#ffffff", font=("Segoe UI", 10), 
                                     fg="#2c3e50", activebackground="#ffffff")
     show_open_check.pack(anchor="w", pady=5)
+
+    # ===== ADVANCED TAB =====
+    advanced_frame = tk.Frame(notebook, bg="#ffffff")
+    notebook.add(advanced_frame, text="Advanced")
+
+    # Stealth Options Section
+    stealth_section = tk.LabelFrame(advanced_frame, text="Stealth Options", 
+                                   font=("Segoe UI", 10, "bold"), bg="#ffffff", 
+                                   fg="#34495e", padx=15, pady=10)
+    stealth_section.pack(fill="x", padx=15, pady=(15, 10))
+
+    # Port randomization option
+    randomize_ports_var = tk.BooleanVar(value=config.get("randomize_ports", False))
+    randomize_check = tk.Checkbutton(stealth_section, 
+                                    text="Randomize port scan", 
+                                    variable=randomize_ports_var,
+                                    bg="#ffffff", font=("Segoe UI", 10), 
+                                    fg="#2c3e50", activebackground="#ffffff")
+    randomize_check.pack(anchor="w", pady=(5, 10))
+
+    # Description for randomization
+    randomize_desc = tk.Label(stealth_section, 
+                             text="Helps avoid detection by pattern-matching systems and firewalls.", 
+                             font=("Segoe UI", 9), bg="#ffffff", fg="#7f8c8d", 
+                             wraplength=450, justify="left")
+    randomize_desc.pack(anchor="w", pady=(0, 10))
+
+    # Warning note
+    warning_label = tk.Label(stealth_section, 
+                            text="⚠️ Use advanced features responsibly and only on networks you own or have permission to test.", 
+                            font=("Segoe UI", 9, "italic"), bg="#ffffff", fg="#e67e22", 
+                            wraplength=450, justify="left")
+    warning_label.pack(anchor="w", pady=(5, 0))
 
     # ===== EXPORT TAB =====
     export_frame = tk.Frame(notebook, bg="#ffffff")
@@ -726,6 +763,7 @@ def open_settings_window(root, config):
             config["retry_count"] = int(retry_spin.get())
             config["default_ports"] = port_input
             config["scan_protocol"] = protocol_var.get()
+            config["randomize_ports"] = randomize_ports_var.get()  # Save port randomization setting
             
             if export_var.get():
                 config["export_directory"] = dir_entry.get().strip()
@@ -902,6 +940,11 @@ def check_ports_threaded_with_export(host, ports, results_tree, clear_button, co
 
     protocol = root.protocol_var.get().upper()
     
+    # Randomize port order if enabled
+    if config.get("randomize_ports", False):
+        ports = ports.copy()  # Create a copy to avoid modifying the original list
+        random.shuffle(ports)
+    
     # Calculate total expected scans
     total_scans = 0
     if protocol in ("TCP", "TCP/UDP"):
@@ -981,7 +1024,10 @@ def on_check_ports_with_export():
         
         # Initialize progress bar and show scanning status
         root.progress_var.set(0)
-        root.status_label.config(text=f"Scanning {host} ({resolved_ip}) - {len(ports)} ports...")
+        scan_status = f"Scanning {host} ({resolved_ip}) - {len(ports)} ports..."
+        if config.get("randomize_ports", False):
+            scan_status += " (randomized order)"
+        root.status_label.config(text=scan_status)
         
         # Prepare scan data for export
         scan_data = {
