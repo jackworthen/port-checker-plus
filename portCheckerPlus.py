@@ -169,6 +169,25 @@ def update_profile_indicator():
             fg=colors["fg"]
         )
 
+def update_advanced_options_indicator():
+    """Update the advanced options indicator label"""
+    if hasattr(root, 'advanced_label'):
+        config = load_config()
+        randomize_enabled = config.get("randomize_ports", False)
+        delay_enabled = config.get("variable_delay_scan", False)
+        
+        if randomize_enabled or delay_enabled:
+            root.advanced_label.config(
+                text=" Advanced Options Enabled ",
+                bg="#e74c3c",  # Red background
+                fg="white"
+            )
+            # Show the label by packing it
+            root.advanced_label.pack(side="left", padx=(0, 15))
+        else:
+            # Hide the label by removing it from pack
+            root.advanced_label.pack_forget()
+
 def open_documentation():
     """Open the documentation URL in the default browser"""
     try:
@@ -524,14 +543,14 @@ def open_settings_window(root, config):
                                     variable=randomize_ports_var,
                                     bg="#ffffff", font=("Segoe UI", 10), 
                                     fg="#2c3e50", activebackground="#ffffff")
-    randomize_check.pack(anchor="w", pady=(5, 5))
+    randomize_check.pack(anchor="w", pady=(5, 0))
 
     # Description for randomization
     randomize_desc = tk.Label(stealth_section, 
                              text="Randomizes the order in which ports are scanned.", 
                              font=("Segoe UI", 9), bg="#ffffff", fg="#7f8c8d", 
                              wraplength=450, justify="left")
-    randomize_desc.pack(anchor="w", pady=(0, 15))
+    randomize_desc.pack(anchor="w", pady=(2, 15))
 
     # Variable delay scan option
     variable_delay_var = tk.BooleanVar(value=config.get("variable_delay_scan", False))
@@ -540,14 +559,14 @@ def open_settings_window(root, config):
                                          variable=variable_delay_var,
                                          bg="#ffffff", font=("Segoe UI", 10), 
                                          fg="#2c3e50", activebackground="#ffffff")
-    variable_delay_check.pack(anchor="w", pady=(5, 5))
+    variable_delay_check.pack(anchor="w", pady=(5, 0))
 
     # Description for variable delay
     delay_desc = tk.Label(stealth_section, 
                          text="Adds random delays (300-700ms) between port scans to avoid rate limiting.", 
                          font=("Segoe UI", 9), bg="#ffffff", fg="#7f8c8d", 
                          wraplength=450, justify="left")
-    delay_desc.pack(anchor="w", pady=(0, 15))
+    delay_desc.pack(anchor="w", pady=(2, 15))
 
     # Warning note
     warning_label = tk.Label(stealth_section, 
@@ -800,6 +819,9 @@ def open_settings_window(root, config):
                 
                 # Update the profile indicator
                 update_profile_indicator()
+                
+                # Update the advanced options indicator
+                update_advanced_options_indicator()
 
             messagebox.showinfo("Settings Saved", "Your settings have been saved successfully.")
             settings_win.destroy()
@@ -1256,6 +1278,11 @@ def run_gui():
                                  fg="white", activebackground="#7f8c8d", relief="flat", padx=20, pady=5)
     root.clear_button.pack(side="left", padx=(0, 15))
     
+    # Advanced options indicator label
+    root.advanced_label = tk.Label(button_frame, text="", font=("Segoe UI", 9, "bold"), 
+                                  relief="solid", padx=10, pady=3, borderwidth=1)
+    # Don't pack initially - will be shown/hidden by update_advanced_options_indicator()
+    
     # Profile indicator label (positioned to the far right)
     root.profile_label = tk.Label(button_frame, text="", font=("Segoe UI", 10, "bold"), 
                                  relief="solid", padx=12, pady=5, borderwidth=1)
@@ -1330,8 +1357,9 @@ def run_gui():
     root.progress_bar = ttk.Progressbar(progress_frame, variable=root.progress_var, maximum=100, length=200)
     root.progress_bar.pack(side="right", padx=(10, 0))
 
-    # Initialize the profile indicator
+    # Initialize the profile indicator and advanced options indicator
     update_profile_indicator()
+    update_advanced_options_indicator()
 
     root.mainloop()
 
