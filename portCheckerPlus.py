@@ -10,6 +10,8 @@ import platform
 from pathlib import Path
 import time
 import webbrowser
+import csv
+import xml.etree.ElementTree as ET
 
 import sys
 
@@ -38,6 +40,7 @@ default_config = {
     "timeout": 0.3,
     "export_results": False,
     "export_directory": os.getcwd(),
+    "export_format": "TXT",
     "default_host": "",
     "default_ports": "",
     "retry_count": 2,
@@ -69,7 +72,11 @@ def load_config():
     if os.path.exists(CONFIG_PATH):
         try:
             with open(CONFIG_PATH, "r") as f:
-                return json.load(f)
+                config = json.load(f)
+                # Ensure new export_format key exists
+                if "export_format" not in config:
+                    config["export_format"] = "TXT"
+                return config
         except json.JSONDecodeError:
             pass
     # Write default config if file doesn't exist or is invalid
@@ -162,10 +169,167 @@ def open_documentation():
     except Exception as e:
         messagebox.showerror("Error", f"Could not open documentation:\n{e}")
 
+def get_export_file_path(config):
+    """Get the export file path with appropriate extension"""
+    export_format = config.get("export_format", "TXT").upper()
+    extensions = {
+        "TXT": "portcheck_log.txt",
+        "CSV": "portcheck_log.csv", 
+        "JSON": "portcheck_log.json",
+        "XML": "portcheck_log.xml"
+    }
+    filename = extensions.get(export_format, "portcheck_log.txt")
+    return os.path.join(config["export_directory"], filename)
+
+def export_results_to_file(scan_data, scan_results, config):
+    """Export scan results in the specified format"""
+    if not config.get("export_results", False):
+        return
+        
+    export_format = config.get("export_format", "TXT").upper()
+    export_file_path = get_export_file_path(config)
+    
+    try:
+        os.makedirs(os.path.dirname(export_file_path), exist_ok=True)
+        
+        if export_format == "TXT":
+            export_to_txt(export_file_path, scan_data, scan_results)
+        elif export_format == "CSV":
+            export_to_csv(export_file_path, scan_data, scan_results)
+        elif export_format == "JSON":
+            export_to_json(export_file_path, scan_data, scan_results)
+        elif export_format == "XML":
+            export_to_xml(export_file_path, scan_data, scan_results)
+            
+    except Exception as e:
+        messagebox.showerror("Export Error", f"Could not export results:\n{e}")
+
+def export_to_txt(file_path, scan_data, scan_results):
+    """Export results to TXT format (original format)"""
+    with open(file_path, "a") as f:
+        f.write("\n" + "=" * 50 + "\n")
+        f.write(f"Scan Results: {scan_data['timestamp']}\n")
+        f.write(f"Host: {scan_data['host']}\n")
+        f.write(f"Resolved IP: {scan_data['resolved_ip']}\n")
+        f.write(f"Ports: {scan_data['port_input']}\n")
+        f.write(f"Protocol: {scan_data['protocol']}\n")
+        f.write("=" * 50 + "\n\n")
+        
+        for result in scan_results:
+            status_text = f"{result['protocol']} Port {result['port']} is {result['status']}"
+            if result['service'] and result['service'] != 'Unknown':
+                status_text += f" (Service: {result['service']})"
+            if result['response_time'] > 0:
+                status_text += f" - {result['response_time']}ms"
+            f.write(status_text + "\n")
+
+def export_to_csv(file_path, scan_data, scan_results):
+    """Export results to CSV format"""
+    file_exists = os.path.exists(file_path)
+    
+    with open(file_path, "a", newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        
+        # Write header if file is new
+        if not file_exists:
+            writer.writerow(["Timestamp", "Host", "Resolved IP", "Port", "Protocol", "Status", "Service", "Response Time (ms)"])
+        
+        # Write scan results
+        for result in scan_results:
+            writer.writerow([
+                scan_data['timestamp'],
+                scan_data['host'],
+                scan_data['resolved_ip'],
+                result['port'],
+                result['protocol'],
+                result['status'],
+                result['service'],
+                result['response_time'] if result['response_time'] > 0 else ""
+            ])
+
+def export_to_json(file_path, scan_data, scan_results):
+    """Export results to JSON format"""
+    # Load existing data if file exists
+    scan_history = []
+    if os.path.exists(file_path):
+        try:
+            with open(file_path, "r", encoding='utf-8') as f:
+                scan_history = json.load(f)
+        except (json.JSONDecodeError, FileNotFoundError):
+            scan_history = []
+    
+    # Create new scan entry
+    scan_entry = {
+        "scan_info": scan_data,
+        "results": scan_results,
+        "summary": {
+            "total_ports": len(scan_results),
+            "open_ports": len([r for r in scan_results if r['status'] == 'OPEN']),
+            "closed_ports": len([r for r in scan_results if r['status'] == 'CLOSED']),
+            "filtered_ports": len([r for r in scan_results if 'FILTERED' in r['status']]),
+            "error_ports": len([r for r in scan_results if r['status'] == 'ERROR'])
+        }
+    }
+    
+    scan_history.append(scan_entry)
+    
+    # Write updated data
+    with open(file_path, "w", encoding='utf-8') as f:
+        json.dump(scan_history, f, indent=2, ensure_ascii=False)
+
+def export_to_xml(file_path, scan_data, scan_results):
+    """Export results to XML format"""
+    # Load existing XML or create new root
+    if os.path.exists(file_path):
+        try:
+            tree = ET.parse(file_path)
+            root_elem = tree.getroot()
+        except ET.ParseError:
+            root_elem = ET.Element("port_scan_history")
+    else:
+        root_elem = ET.Element("port_scan_history")
+    
+    # Create scan element
+    scan_elem = ET.SubElement(root_elem, "scan")
+    scan_elem.set("timestamp", scan_data['timestamp'])
+    
+    # Add scan info
+    info_elem = ET.SubElement(scan_elem, "scan_info")
+    ET.SubElement(info_elem, "host").text = scan_data['host']
+    ET.SubElement(info_elem, "resolved_ip").text = scan_data['resolved_ip']
+    ET.SubElement(info_elem, "ports").text = scan_data['port_input']
+    ET.SubElement(info_elem, "protocol").text = scan_data['protocol']
+    
+    # Add results
+    results_elem = ET.SubElement(scan_elem, "results")
+    for result in scan_results:
+        port_elem = ET.SubElement(results_elem, "port")
+        port_elem.set("number", str(result['port']))
+        port_elem.set("protocol", result['protocol'])
+        port_elem.set("status", result['status'])
+        
+        if result['service']:
+            port_elem.set("service", result['service'])
+        if result['response_time'] > 0:
+            port_elem.set("response_time", f"{result['response_time']}ms")
+    
+    # Add summary
+    summary_elem = ET.SubElement(scan_elem, "summary")
+    summary_elem.set("total_ports", str(len(scan_results)))
+    summary_elem.set("open_ports", str(len([r for r in scan_results if r['status'] == 'OPEN'])))
+    summary_elem.set("closed_ports", str(len([r for r in scan_results if r['status'] == 'CLOSED'])))
+    summary_elem.set("filtered_ports", str(len([r for r in scan_results if 'FILTERED' in r['status']])))
+    summary_elem.set("error_ports", str(len([r for r in scan_results if r['status'] == 'ERROR'])))
+    
+    # Write XML
+    tree = ET.ElementTree(root_elem)
+    ET.indent(tree, space="  ", level=0)  # Pretty print
+    tree.write(file_path, encoding='utf-8', xml_declaration=True)
+
 def open_settings_window(root, config):
     settings_win = tk.Toplevel(root)
     settings_win.title("Settings - Port Checker Plus")
-    settings_win.geometry("520x560")
+    settings_win.geometry("520x600")  # Increased height for new dropdown
     settings_win.configure(bg="#ffffff")
     settings_win.transient(root)
     settings_win.grab_set()
@@ -354,6 +518,19 @@ def open_settings_window(root, config):
                                  fg="#2c3e50", activebackground="#ffffff")
     export_check.pack(anchor="w", pady=(5, 15))
 
+    # Export format selection
+    format_frame = tk.Frame(export_section, bg="#ffffff")
+    format_frame.pack(fill="x", pady=(0, 15))
+    
+    tk.Label(format_frame, text="Export Format:", font=("Segoe UI", 10), 
+             bg="#ffffff", fg="#2c3e50").pack(side="left")
+    format_var = tk.StringVar(value=config.get("export_format", "TXT"))
+    format_options = ["TXT", "CSV", "JSON", "XML"]
+    format_combo = ttk.Combobox(format_frame, textvariable=format_var, 
+                               values=format_options, state="readonly", width=10,
+                               font=("Segoe UI", 10))
+    format_combo.pack(side="right")
+
     # Export directory
     dir_label = tk.Label(export_section, text="Export Directory:", 
                         font=("Segoe UI", 10), bg="#ffffff", fg="#2c3e50")
@@ -381,20 +558,116 @@ def open_settings_window(root, config):
 
     browse_btn.config(command=browse_directory)
 
+    # Export file info
+    def update_info_label():
+        selected_format = format_var.get().lower()
+        filename = f"portcheck_log.{selected_format}"
+        info_label.config(text=f"Log will be saved to '{filename}' in the selected directory")
+
+    info_label = tk.Label(export_section, 
+                         text="",
+                         font=("Segoe UI", 9), bg="#ffffff", fg="#7f8c8d")
+    info_label.pack(anchor="w", pady=(5, 0))
+    
+    # Bind format change to update info label
+    format_combo.bind("<<ComboboxSelected>>", lambda e: update_info_label())
+    update_info_label()  # Set initial text
+
+    # ===== CLEAR LOGS SECTION =====
+    clear_logs_section = tk.LabelFrame(export_frame, text="Log Management", 
+                                      font=("Segoe UI", 10, "bold"), bg="#ffffff", 
+                                      fg="#34495e", padx=15, pady=10)
+    # Don't pack initially - will be controlled by toggle_export_inputs
+    
+    clear_logs_frame = tk.Frame(clear_logs_section, bg="#ffffff")
+    clear_logs_frame.pack(fill="x", pady=5)
+    
+    def clear_logs():
+        """Delete all existing log files from directory."""
+        export_dir = dir_entry.get().strip()
+        if not export_dir or not os.path.exists(export_dir):
+            messagebox.showwarning("Clear Logs", "Please select a valid export directory first.")
+            return
+        
+        # Define all possible log files
+        log_files = [
+            "portcheck_log.txt",
+            "portcheck_log.csv", 
+            "portcheck_log.json",
+            "portcheck_log.xml"
+        ]
+        
+        # Find existing log files
+        existing_files = []
+        for filename in log_files:
+            file_path = os.path.join(export_dir, filename)
+            if os.path.exists(file_path):
+                existing_files.append((filename, file_path))
+        
+        if not existing_files:
+            messagebox.showinfo("Clear Logs", "No log files found in the specified directory.")
+            return
+        
+        # Confirm deletion
+        file_list = "\n".join([f"• {filename}" for filename, _ in existing_files])
+        confirm_message = f"Are you sure you want to delete the following log files?\n\n{file_list}\n\nThis action cannot be undone."
+        
+        if not messagebox.askyesno("Confirm Delete", confirm_message, icon="warning"):
+            return
+        
+        # Delete files
+        deleted_files = []
+        failed_files = []
+        
+        for filename, file_path in existing_files:
+            try:
+                os.remove(file_path)
+                deleted_files.append(filename)
+            except Exception as e:
+                failed_files.append((filename, str(e)))
+        
+        # Show results
+        if deleted_files and not failed_files:
+            messagebox.showinfo("Clear Logs", 
+                              f"Successfully deleted {len(deleted_files)} log file(s):\n" + 
+                              "\n".join([f"• {f}" for f in deleted_files]))
+        elif deleted_files and failed_files:
+            success_msg = "Deleted:\n" + "\n".join([f"• {f}" for f in deleted_files])
+            error_msg = "Failed to delete:\n" + "\n".join([f"• {f}: {e}" for f, e in failed_files])
+            messagebox.showwarning("Clear Logs - Partial Success", 
+                                 f"{success_msg}\n\n{error_msg}")
+        else:
+            error_msg = "Failed to delete:\n" + "\n".join([f"• {f}: {e}" for f, e in failed_files])
+            messagebox.showerror("Clear Logs - Error", f"Could not delete any files:\n\n{error_msg}")
+    
+    clear_logs_btn = tk.Button(clear_logs_frame, text="Clear Logs", font=("Segoe UI", 10),
+                              command=clear_logs, bg="#e74c3c", fg="white", 
+                              activebackground="#c0392b", relief="flat", padx=20, pady=6)
+    clear_logs_btn.pack(side="left")
+    
+    clear_logs_info = tk.Label(clear_logs_frame, 
+                              text="Delete all existing log files from directory.",
+                              font=("Segoe UI", 9), bg="#ffffff", fg="#7f8c8d")
+    clear_logs_info.pack(side="left", padx=(15, 0))
+
     def toggle_export_inputs():
         state = tk.NORMAL if export_var.get() else tk.DISABLED
         dir_entry.config(state=state)
         browse_btn.config(state=state)
+        format_combo.config(state="readonly" if export_var.get() else tk.DISABLED)
+        clear_logs_btn.config(state=state)
         dir_label.config(fg="#2c3e50" if export_var.get() else "#bdc3c7")
+        clear_logs_info.config(fg="#7f8c8d" if export_var.get() else "#bdc3c7")
+        info_label.config(fg="#7f8c8d" if export_var.get() else "#bdc3c7")
+        
+        # Toggle the entire clear logs section visibility
+        if export_var.get():
+            clear_logs_section.pack(fill="x", padx=15, pady=10)
+        else:
+            clear_logs_section.pack_forget()
 
     export_check.config(command=toggle_export_inputs)
     toggle_export_inputs()
-
-    # Export file info
-    info_label = tk.Label(export_section, 
-                         text="Log will be saved to 'portcheck_log.txt' in the selected directory",
-                         font=("Segoe UI", 9), bg="#ffffff", fg="#7f8c8d")
-    info_label.pack(anchor="w", pady=(5, 0))
 
     # ===== BUTTONS FRAME =====
     button_frame = tk.Frame(main_frame, bg="#ffffff")
@@ -447,6 +720,7 @@ def open_settings_window(root, config):
             # Save configuration
             config["timeout"] = timeout_val
             config["export_results"] = export_var.get()
+            config["export_format"] = format_var.get()
             config["show_open_only"] = show_open_only_var.get()
             config["default_host"] = host_entry.get().strip()
             config["retry_count"] = int(retry_spin.get())
@@ -506,14 +780,11 @@ def resolve_hostname_and_print(host, results_tree, config):
 
 file_lock = threading.Lock()
 
-def get_export_file_path(config):
-    return os.path.join(config["export_directory"], "portcheck_log.txt")
-
 def get_port_category(port):
     """All ports use the same category now - simplified"""
     return "normal"
 
-def scan_port_with_export(host, port, results_tree, config, export_file_path, scan_results):
+def scan_port_with_export(host, port, results_tree, config, scan_results):
     try:
         start_time = time.time()
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -542,15 +813,9 @@ def scan_port_with_export(host, port, results_tree, config, export_file_path, sc
         if config.get("show_open_only", False) and status != "OPEN":
             return
 
-        # Store result for later insertion into tree
-        scan_results.append(result_data)
-
-        message = f"TCP Port {port} is {status} (Service: {service})\n"
-        if config.get("export_results", False):
-            os.makedirs(os.path.dirname(export_file_path), exist_ok=True)
-            with file_lock:
-                with open(config.get("_current_export_file", export_file_path), "a") as f:
-                    f.write(message)
+        # Store result for later insertion into tree and export
+        with file_lock:
+            scan_results.append(result_data)
 
     except Exception as e:
         error_data = {
@@ -561,16 +826,10 @@ def scan_port_with_export(host, port, results_tree, config, export_file_path, sc
             'response_time': 0,
             'category': 'error'
         }
-        scan_results.append(error_data)
-        
-        error_msg = f"Error on TCP port {port}: {e}\n"
-        if config.get("export_results", False):
-            os.makedirs(os.path.dirname(export_file_path), exist_ok=True)
-            with file_lock:
-                with open(config.get("_current_export_file", export_file_path), "a") as f:
-                    f.write(error_msg)
+        with file_lock:
+            scan_results.append(error_data)
 
-def scan_udp_port(host, port, results_tree, config, export_file_path, scan_results):
+def scan_udp_port(host, port, results_tree, config, scan_results):
     try:
         start_time = time.time()
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
@@ -598,14 +857,8 @@ def scan_udp_port(host, port, results_tree, config, export_file_path, scan_resul
         if config.get("show_open_only", False) and "OPEN" not in status:
             return
 
-        scan_results.append(result_data)
-
-        message = f"UDP Port {port} is {status}\n"
-        if config.get("export_results", False):
-            os.makedirs(os.path.dirname(export_file_path), exist_ok=True)
-            with file_lock:
-                with open(config.get("_current_export_file", export_file_path), "a") as f:
-                    f.write(message)
+        with file_lock:
+            scan_results.append(result_data)
 
     except Exception as e:
         if not config.get("show_open_only", False):
@@ -617,14 +870,8 @@ def scan_udp_port(host, port, results_tree, config, export_file_path, scan_resul
                 'response_time': 0,
                 'category': 'error'
             }
-            scan_results.append(error_data)
-            
-            error_msg = f"Error on UDP port {port}: {e}\n"
-            if config.get("export_results", False):
-                os.makedirs(os.path.dirname(export_file_path), exist_ok=True)
-                with file_lock:
-                    with open(config.get("_current_export_file", export_file_path), "a") as f:
-                        f.write(error_msg)
+            with file_lock:
+                scan_results.append(error_data)
 
 def update_results_tree(results_tree, scan_results):
     """Update the results tree with scan data and apply color coding"""
@@ -650,9 +897,8 @@ def update_results_tree(results_tree, scan_results):
             
         results_tree.insert("", "end", values=values, tags=(tag,))
 
-def check_ports_threaded_with_export(host, ports, results_tree, clear_button, config):
+def check_ports_threaded_with_export(host, ports, results_tree, clear_button, config, scan_data):
     clear_button.config(state=tk.NORMAL)
-    export_file_path = get_export_file_path(config) if config.get("export_results") else None
 
     protocol = root.protocol_var.get().upper()
     
@@ -666,7 +912,6 @@ def check_ports_threaded_with_export(host, ports, results_tree, clear_button, co
     counter = {"count": 0}
     counter_lock = threading.Lock()
     scan_results = []
-    results_lock = threading.Lock()
 
     def on_port_done():
         with counter_lock:
@@ -679,6 +924,14 @@ def check_ports_threaded_with_export(host, ports, results_tree, clear_button, co
             if counter["count"] == total_scans:
                 # Update the results tree when scanning is complete
                 results_tree.after(0, lambda: update_results_tree(results_tree, scan_results))
+                
+                # Export results after scanning is complete
+                if config.get("export_results", False):
+                    try:
+                        export_results_to_file(scan_data, scan_results, config)
+                    except Exception as e:
+                        messagebox.showerror("Export Error", f"Could not export results:\n{e}")
+                
                 # Update status label with completion message
                 root.status_label.config(text=f"Scan complete - {len(ports)} ports checked")
                 # Reset progress bar after completion
@@ -686,13 +939,13 @@ def check_ports_threaded_with_export(host, ports, results_tree, clear_button, co
 
     def run_tcp_scan(p):
         try:
-            scan_port_with_export(host, p, results_tree, config, export_file_path, scan_results)
+            scan_port_with_export(host, p, results_tree, config, scan_results)
         finally:
             on_port_done()
 
     def run_udp_scan(p):
         try:
-            scan_udp_port(host, p, results_tree, config, export_file_path, scan_results)
+            scan_udp_port(host, p, results_tree, config, scan_results)
         finally:
             on_port_done()
 
@@ -715,17 +968,6 @@ def on_check_ports_with_export():
     clear_results_tree()
     
     resolved_ip = resolve_hostname_and_print(host, root.results_tree, config)
-    if resolved_ip and config.get("export_results"):
-        export_file_path = get_export_file_path(config)
-        try:
-            with open(export_file_path, "a") as f:
-                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                f.write("\n" + "=" * 5 + ("Scan Results: {}".format(timestamp) + "=" * 5 + "\n"))
-                f.write("Host: {}\n".format(host))
-                f.write("Resolved IP: {}\n".format(resolved_ip))
-                f.write("Ports: {}\n\n".format(port_input))
-        except Exception as e:
-            messagebox.showerror("File Error", "Could not write export file: {}".format(e))
     if not resolved_ip:
         return
 
@@ -741,9 +983,18 @@ def on_check_ports_with_export():
         root.progress_var.set(0)
         root.status_label.config(text=f"Scanning {host} ({resolved_ip}) - {len(ports)} ports...")
         
+        # Prepare scan data for export
+        scan_data = {
+            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            'host': host,
+            'resolved_ip': resolved_ip,
+            'port_input': port_input,
+            'protocol': root.protocol_var.get()
+        }
+        
         threading.Thread(
             target=check_ports_threaded_with_export,
-            args=(host, ports, root.results_tree, root.clear_button, config),
+            args=(host, ports, root.results_tree, root.clear_button, config, scan_data),
             daemon=True
         ).start()
         root.clear_button.config(state=tk.NORMAL)
