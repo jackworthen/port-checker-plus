@@ -1314,7 +1314,7 @@ def run_gui():
     root.results_tree.column('Port', width=80, anchor='center')
     root.results_tree.column('Protocol', width=80, anchor='center')
     root.results_tree.column('Status', width=120, anchor='center')
-    root.results_tree.column('Service', width=150, anchor='w')
+    root.results_tree.column('Service', width=150, anchor='center')
     root.results_tree.column('Response Time', width=100, anchor='center')
 
     # Configure column headings with sorting
