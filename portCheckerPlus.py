@@ -14,7 +14,7 @@ import csv
 import xml.etree.ElementTree as ET
 import random  # Added for port randomization
 import ipaddress  # Added for CIDR support
-
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import sys
 
 def resource_path(relative_path):
@@ -50,7 +50,8 @@ default_config = {
     "show_open_only": False,
     "randomize_ports": False,  # Added for port randomization
     "variable_delay_scan": False,  # Added for variable delay scanning
-    "max_cidr_hosts": 254  # Added limit for CIDR scanning
+    "max_cidr_hosts": 254,  # Added limit for CIDR scanning
+    "max_concurrent_threads": 20  # Added for concurrent thread control
 }
 
 # Define common port profiles
@@ -87,6 +88,8 @@ def load_config():
                     config["variable_delay_scan"] = False
                 if "max_cidr_hosts" not in config:
                     config["max_cidr_hosts"] = 254
+                if "max_concurrent_threads" not in config:
+                    config["max_concurrent_threads"] = 20
                 return config
         except json.JSONDecodeError:
             pass
@@ -622,15 +625,19 @@ def open_settings_window(root, config):
     retry_spin.insert(0, str(config.get("retry_count", 2)))
     retry_spin.pack(side="right")
 
-    # CIDR Options Section
-    cidr_section = tk.LabelFrame(general_frame, text="Network Scanning Options", 
-                                font=("Segoe UI", 10, "bold"), bg="#ffffff", 
-                                fg="#34495e", padx=15, pady=10)
-    cidr_section.pack(fill="x", padx=15, pady=10)
+    # Max concurrent threads
+    threads_frame = tk.Frame(scan_section, bg="#ffffff")
+    threads_frame.pack(fill="x", pady=(0, 12))
+    tk.Label(threads_frame, text="Max Concurrent Threads:", font=("Segoe UI", 10), 
+             bg="#ffffff", fg="#2c3e50").pack(side="left")
+    threads_spin = tk.Spinbox(threads_frame, from_=1, to=100, width=8, font=("Segoe UI", 10))
+    threads_spin.delete(0, tk.END)
+    threads_spin.insert(0, str(config.get("max_concurrent_threads", 20)))
+    threads_spin.pack(side="right")
 
     # Max CIDR hosts
-    cidr_frame = tk.Frame(cidr_section, bg="#ffffff")
-    cidr_frame.pack(fill="x", pady=(5, 0))
+    cidr_frame = tk.Frame(scan_section, bg="#ffffff")
+    cidr_frame.pack(fill="x", pady=(0, 0))
     tk.Label(cidr_frame, text="Max Hosts per CIDR Scan:", font=("Segoe UI", 10), 
              bg="#ffffff", fg="#2c3e50").pack(side="left")
     cidr_spin = tk.Spinbox(cidr_frame, from_=10, to=1024, width=8, font=("Segoe UI", 10))
@@ -639,8 +646,8 @@ def open_settings_window(root, config):
     cidr_spin.pack(side="right")
 
     # CIDR description
-    cidr_desc = tk.Label(cidr_section, 
-                        text="Limits the number of hosts scanned when using CIDR notation to prevent excessive scanning.", 
+    cidr_desc = tk.Label(scan_section, 
+                        text="Limit scanned hosts when using CIDR notation to prevent excessive scanning.", 
                         font=("Segoe UI", 9), bg="#ffffff", fg="#7f8c8d", 
                         wraplength=450, justify="left")
     cidr_desc.pack(anchor="w", pady=(5, 0))
@@ -917,6 +924,12 @@ def open_settings_window(root, config):
                 messagebox.showerror("Invalid Input", "Max CIDR hosts must be at least 1.")
                 return
 
+            # Validate max concurrent threads
+            max_threads = int(threads_spin.get())
+            if max_threads < 1 or max_threads > 100:
+                messagebox.showerror("Invalid Input", "Max concurrent threads must be between 1 and 100.")
+                return
+
             # Validate export directory if export is enabled
             if export_var.get():
                 export_path = dir_entry.get().strip()
@@ -943,6 +956,7 @@ def open_settings_window(root, config):
             config["randomize_ports"] = randomize_ports_var.get()
             config["variable_delay_scan"] = variable_delay_var.get()
             config["max_cidr_hosts"] = max_cidr_hosts
+            config["max_concurrent_threads"] = max_threads
             
             if export_var.get():
                 config["export_directory"] = dir_entry.get().strip()
@@ -1007,19 +1021,27 @@ def get_port_category(port):
 
 def scan_port_with_export(host, port, results_tree, config, scan_results):
     try:
-        # Check if scan should be stopped
+        # Check if scan should be stopped before starting
         if stop_scan_event.is_set():
-            return
+            return False  # Return False to indicate scan was stopped before execution
             
-        # Add variable delay if enabled
+        # Add variable delay if enabled (but check stop event during delay)
         if config.get("variable_delay_scan", False):
             base_delay = 0.2  # Base delay of 200ms
             jitter = random.uniform(0.1, 0.5)  # Random jitter between 100-500ms
-            time.sleep(base_delay + jitter)  # Total delay: 300-700ms
+            delay_time = base_delay + jitter
+            
+            # Break delay into smaller chunks to be more responsive to stop
+            chunks = 10
+            chunk_delay = delay_time / chunks
+            for _ in range(chunks):
+                if stop_scan_event.is_set():
+                    return False
+                time.sleep(chunk_delay)
         
-        # Check again after delay
+        # Final check before actual scan
         if stop_scan_event.is_set():
-            return
+            return False
             
         start_time = time.time()
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -1035,6 +1057,10 @@ def scan_port_with_export(host, port, results_tree, config, scan_results):
         except:
             service = 'Unknown'
 
+        # Check if scan was stopped during execution
+        if stop_scan_event.is_set():
+            return False
+
         # Create result data
         result_data = {
             'host': host,  # Include host in result data
@@ -1047,16 +1073,18 @@ def scan_port_with_export(host, port, results_tree, config, scan_results):
         }
 
         if config.get("show_open_only", False) and status != "OPEN":
-            return
+            return True  # Return True to indicate scan completed successfully
 
         # Store result for later insertion into tree and export
         with file_lock:
             scan_results.append(result_data)
+        
+        return True  # Return True to indicate scan completed successfully
 
     except Exception as e:
         # Don't add error data if scan was stopped
         if stop_scan_event.is_set():
-            return
+            return False
             
         error_data = {
             'host': host,
@@ -1069,22 +1097,32 @@ def scan_port_with_export(host, port, results_tree, config, scan_results):
         }
         with file_lock:
             scan_results.append(error_data)
+        
+        return True  # Return True even for errors, as the scan was attempted
 
 def scan_udp_port(host, port, results_tree, config, scan_results):
     try:
-        # Check if scan should be stopped
+        # Check if scan should be stopped before starting
         if stop_scan_event.is_set():
-            return
+            return False
             
-        # Add variable delay if enabled
+        # Add variable delay if enabled (but check stop event during delay)
         if config.get("variable_delay_scan", False):
             base_delay = 0.2  # Base delay of 200ms
             jitter = random.uniform(0.1, 0.5)  # Random jitter between 100-500ms
-            time.sleep(base_delay + jitter)  # Total delay: 300-700ms
+            delay_time = base_delay + jitter
+            
+            # Break delay into smaller chunks to be more responsive to stop
+            chunks = 10
+            chunk_delay = delay_time / chunks
+            for _ in range(chunks):
+                if stop_scan_event.is_set():
+                    return False
+                time.sleep(chunk_delay)
         
-        # Check again after delay
+        # Final check before actual scan
         if stop_scan_event.is_set():
-            return
+            return False
             
         start_time = time.time()
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
@@ -1100,6 +1138,10 @@ def scan_udp_port(host, port, results_tree, config, scan_results):
                 end_time = time.time()
                 response_time = round((end_time - start_time) * 1000, 1)
         
+        # Check if scan was stopped during execution
+        if stop_scan_event.is_set():
+            return False
+        
         result_data = {
             'host': host,  # Include host in result data
             'port': port,
@@ -1111,15 +1153,17 @@ def scan_udp_port(host, port, results_tree, config, scan_results):
         }
 
         if config.get("show_open_only", False) and "OPEN" not in status:
-            return
+            return True
 
         with file_lock:
             scan_results.append(result_data)
+        
+        return True
 
     except Exception as e:
         # Don't add error data if scan was stopped
         if stop_scan_event.is_set():
-            return
+            return False
             
         if not config.get("show_open_only", False):
             error_data = {
@@ -1133,6 +1177,8 @@ def scan_udp_port(host, port, results_tree, config, scan_results):
             }
             with file_lock:
                 scan_results.append(error_data)
+        
+        return True
 
 def update_results_tree(results_tree, scan_results):
     """Update the results tree with scan data and apply color coding"""
@@ -1162,10 +1208,13 @@ def update_results_tree(results_tree, scan_results):
 def check_ports_threaded_with_export(hosts, ports, results_tree, clear_button, config, scan_data):
     clear_button.config(state=tk.NORMAL)
 
+    # Reload config to get the latest settings (in case user just changed them)
+    current_config = load_config()
+    
     protocol = root.protocol_var.get().upper()
     
     # Randomize port order if enabled
-    if config.get("randomize_ports", False):
+    if current_config.get("randomize_ports", False):
         ports = ports.copy()  # Create a copy to avoid modifying the original list
         random.shuffle(ports)
     
@@ -1192,15 +1241,15 @@ def check_ports_threaded_with_export(hosts, ports, results_tree, clear_button, c
             else:
                 root.status_label.config(text=f"{counter['count']} of {total_scans} scans completed")
             
-            if counter["count"] == total_scans:
+            if counter["count"] == total_scans or stop_scan_event.is_set():
                 counter["completed"] = 1
                 # Update the results tree when scanning is complete
                 results_tree.after(0, lambda: update_results_tree(results_tree, scan_results))
                 
                 # Export results after scanning is complete (only if not stopped)
-                if config.get("export_results", False) and not stop_scan_event.is_set():
+                if current_config.get("export_results", False) and not stop_scan_event.is_set():
                     try:
-                        export_results_to_file(scan_data, scan_results, config)
+                        export_results_to_file(scan_data, scan_results, current_config)
                     except Exception as e:
                         messagebox.showerror("Export Error", f"Could not export results:\n{e}")
                 
@@ -1233,29 +1282,120 @@ def check_ports_threaded_with_export(hosts, ports, results_tree, clear_button, c
                 root.after(3000, lambda: (root.progress_var.set(0), root.status_label.config(text="Ready")))
 
     def run_tcp_scan(h, p):
-        try:
-            if not stop_scan_event.is_set():
-                scan_port_with_export(h, p, results_tree, config, scan_results)
-        finally:
+        if stop_scan_event.is_set():
+            return False
+        scan_completed = scan_port_with_export(h, p, results_tree, current_config, scan_results)
+        if scan_completed:
             on_port_done()
+        return scan_completed
 
     def run_udp_scan(h, p):
-        try:
-            if not stop_scan_event.is_set():
-                scan_udp_port(h, p, results_tree, config, scan_results)
-        finally:
-            on_port_done()
-
-    for host in hosts:
         if stop_scan_event.is_set():
-            break
+            return False
+        scan_completed = scan_udp_port(h, p, results_tree, current_config, scan_results)
+        if scan_completed:
+            on_port_done()
+        return scan_completed
+
+    # Create list of all scan tasks
+    scan_tasks = []
+    for host in hosts:
         for port in ports:
-            if stop_scan_event.is_set():
-                break
             if protocol in ("TCP", "TCP/UDP"):
-                threading.Thread(target=run_tcp_scan, args=(host, port), daemon=True).start()
+                scan_tasks.append(('tcp', host, port))
             if protocol in ("UDP", "TCP/UDP"):
-                threading.Thread(target=run_udp_scan, args=(host, port), daemon=True).start()
+                scan_tasks.append(('udp', host, port))
+
+    # Use ThreadPoolExecutor with limited workers for better control
+    # Active threads: min(config_value, total_tasks) - only this many threads run concurrently
+    # Queued tasks: Only 20 tasks queued at a time (batch processing)
+    max_workers = min(current_config.get("max_concurrent_threads", 20), len(scan_tasks))
+    
+    def trigger_stop_completion():
+        """Helper function to trigger completion UI when scan is stopped"""
+        def force_completion_ui():
+            root.status_label.config(text=f"Scan stopped - {len(scan_results)} results collected")
+            root.stop_button.config(text="Stopped")
+            root.after(1000, lambda: (
+                root.stop_button.pack_forget(),
+                root.stop_button.config(state=tk.NORMAL, text="Stop Scan")
+            ))
+            root.check_button.config(state=tk.NORMAL)
+            results_tree.after(0, lambda: update_results_tree(results_tree, scan_results))
+        
+        root.after(0, force_completion_ui)
+
+    def run_scan_batch():
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit tasks in small batches for better stop responsiveness
+            # Make batch size dynamic based on max_workers for better progress visibility
+            batch_size = max(10, min(max_workers * 2, 50))  # Between 10-50 based on thread count
+            task_index = 0
+            future_to_task = {}
+            
+            while task_index < len(scan_tasks) and not stop_scan_event.is_set():
+                # Submit a batch of tasks
+                batch_end = min(task_index + batch_size, len(scan_tasks))
+                
+                for i in range(task_index, batch_end):
+                    if stop_scan_event.is_set():
+                        trigger_stop_completion()
+                        return
+                    
+                    task_type, host, port = scan_tasks[i]
+                    if task_type == 'tcp':
+                        future = executor.submit(run_tcp_scan, host, port)
+                    else:
+                        future = executor.submit(run_udp_scan, host, port)
+                    future_to_task[future] = (task_type, host, port)
+                
+                task_index = batch_end
+                
+                # Process completed tasks from this batch
+                completed_in_batch = 0
+                for future in as_completed(future_to_task.copy()):
+                    if stop_scan_event.is_set():
+                        # Cancel all remaining futures
+                        for f in future_to_task:
+                            if not f.done():
+                                f.cancel()
+                        trigger_stop_completion()
+                        return
+                    
+                    try:
+                        result = future.result()
+                        completed_in_batch += 1
+                        future_to_task.pop(future, None)  # Remove completed task
+                    except Exception as e:
+                        print(f"Scan task failed: {e}")
+                        completed_in_batch += 1
+                        future_to_task.pop(future, None)
+                
+                # Small delay between batches to allow stop checking
+                if not stop_scan_event.is_set():
+                    time.sleep(0.1)
+            
+            # Check if we exited due to stop event
+            if stop_scan_event.is_set():
+                trigger_stop_completion()
+                return
+            
+            # Wait for any remaining tasks to complete
+            if future_to_task and not stop_scan_event.is_set():
+                for future in as_completed(future_to_task):
+                    if stop_scan_event.is_set():
+                        for f in future_to_task:
+                            if not f.done():
+                                f.cancel()
+                        trigger_stop_completion()
+                        break
+                    try:
+                        future.result()
+                    except Exception as e:
+                        print(f"Scan task failed: {e}")
+
+    # Run the batch in a separate thread
+    threading.Thread(target=run_scan_batch, daemon=True).start()
 
 def on_check_ports_with_export():
     config = load_config()
@@ -1310,14 +1450,18 @@ def on_check_ports_with_export():
         # Initialize progress bar and show scanning status
         root.progress_var.set(0)
         if is_cidr:
-            scan_status = f"Scanning {host_input} ({len(hosts)} hosts) - {len(ports)} ports..."
+            scan_status = f"Scanning {host_input} ({len(hosts)} hosts) - {len(ports)} ports"
         else:
-            scan_status = f"Scanning {host_input} ({resolved_ip}) - {len(ports)} ports..."
+            scan_status = f"Scanning {host_input} ({resolved_ip}) - {len(ports)} ports"
+        
+        # Add thread count to status for user feedback
+        max_threads = config.get("max_concurrent_threads", 20)
+        scan_status += f" ({max_threads} threads)"
             
         if config.get("randomize_ports", False):
-            scan_status += " (randomized order)"
+            scan_status += " (randomized)"
         if config.get("variable_delay_scan", False):
-            scan_status += " (with delays)"
+            scan_status += " (delayed)"
         root.status_label.config(text=scan_status)
         
         # Prepare scan data for export
@@ -1346,25 +1490,26 @@ def on_check_ports_with_export():
 def on_stop_scan():
     """Stop the current scan"""
     stop_scan_event.set()
-    root.status_label.config(text="Stopping scan...")
     
-    # Disable stop button to prevent multiple clicks and change text
+    # Immediately update UI to show stopping
+    root.status_label.config(text="Stopping scan...")
     root.stop_button.config(state=tk.DISABLED, text="Stopping...")
     
     # Re-enable check button immediately so user can start new scan
     root.check_button.config(state=tk.NORMAL)
     
-    # Schedule the button state update after 1.5 seconds
-    def update_to_stopped():
+    # Force completion UI update after a short delay
+    def force_completion():
         if stop_scan_event.is_set():  # Only if still in stopped state
+            root.status_label.config(text="Scan stopped")
             root.stop_button.config(text="Stopped")
-            # Hide stop button after 2 more seconds
-            root.after(2000, lambda: (
+            # Hide stop button after 1 second and reset its state
+            root.after(1000, lambda: (
                 root.stop_button.pack_forget(),
                 root.stop_button.config(state=tk.NORMAL, text="Stop Scan")
             ))
     
-    root.after(1500, update_to_stopped)
+    root.after(500, force_completion)
 
 def clear_results_tree():
     """Clear the results tree"""
