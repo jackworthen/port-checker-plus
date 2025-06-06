@@ -1,8 +1,8 @@
 # 🚀 Port Checker Plus
 
-**🔍 A powerful, user-friendly network port scanner with a modern GUI**
+**🔍 A powerful, user-friendly network port scanner with advanced stealth capabilities**
 
-*Scan single hosts or entire networks with style!*
+*Scan single hosts or entire networks with professional-grade evasion techniques!*
 
 [📖 Documentation](#-features) • [🚀 Quick Start](#-quick-start) • [⚙️ Configuration](#️-configuration) • [🤝 Contributing](#-contributing)
 
@@ -16,8 +16,12 @@
 - 🔄 **Multi-Protocol Support** - TCP, UDP, or both simultaneously
 - ⚡ **High-Performance Threading** - Intelligent system-aware threading (20-2000+ threads)
 - 🧠 **Smart Resource Management** - Automatic optimization based on system capabilities
+
+### 🥷 **Advanced Stealth Features**
+- 🧩 **Fragmented Packet Scanning** - Split packets across IP fragments to evade basic firewalls and IDS
 - 🎲 **Port Randomization** - Randomize scan order for stealth operations
 - ⏱️ **Variable Delays** - Add random delays between scans to avoid detection
+- 🚨 **Advanced Mode Indicator** - Red window border and title when stealth features are active
 
 ### 🎨 **Modern User Interface**
 - 📊 **Real-time Progress Tracking** - Live progress bar and status updates
@@ -25,6 +29,7 @@
 - 🎨 **Color-coded Results** - Visual distinction between open, closed, and filtered ports
 - 📋 **Sortable Columns** - Click any column header to sort results
 - 🛑 **Responsive Stop Button** - Cancel large scans instantly
+- 🚨 **Visual Stealth Indicators** - Clear indication when advanced features are active
 
 ### ⚡ **Enhanced Performance**
 - 🚀 **Intelligent Threading** - System calculates optimal thread limits automatically
@@ -49,9 +54,9 @@ Choose from pre-configured port sets for common scenarios:
 
 ### 📊 **Export & Logging**
 - 📝 **Multiple Formats** - Export to TXT, CSV, JSON, or XML
-- 📈 **Detailed Reports** - Timestamps, response times, service detection
+- 📈 **Detailed Reports** - Timestamps, response times, service detection, scan methods
 - 🗂️ **Automatic Logging** - Optional automatic result logging
-- 🧹 **Log Management** - Built-in log cleanup tools
+- 🧹 **Log Management** - Built-in log cleanup tool.
 
 ### ⚙️ **Advanced Configuration**
 - ⏱️ **Timeout Control** - Configurable connection timeouts (0.1-10.0s)
@@ -67,6 +72,7 @@ Choose from pre-configured port sets for common scenarios:
 ### 📋 Prerequisites
 - Python 3.7 or higher
 - tkinter (usually included with Python)
+- **For Fragmented Scanning:** Administrative/root privileges
 
 ### 💾 Installation
 
@@ -78,7 +84,16 @@ cd port-checker-plus
 
 2. **Run the application:**
 ```bash
+# Standard mode
 python portCheckerPlus.py
+
+# For fragmented scanning (requires admin privileges)
+# Windows:
+# Right-click "Command Prompt" → "Run as administrator"
+python portCheckerPlus.py
+
+# Linux/macOS:
+sudo python portCheckerPlus.py
 ```
 
 ### 🎯 Basic Usage
@@ -98,7 +113,13 @@ python portCheckerPlus.py
    - Increase **Max Concurrent Threads** (e.g., 500-1000)
    - Perfect for internal networks and large port ranges
 
-4. **Stop Large Scans:**
+4. **Stealth Scanning:**
+   - Go to **Edit → Settings → Advanced**
+   - Enable **Fragmented Packet Scanning** (requires admin privileges)
+   - Enable **Port Randomization** and **Variable Delays**
+   - Window will show red border and "ADVANCED MODE" in title
+
+5. **Stop Large Scans:**
    - Click **Stop Scan** button
    - Results collected so far will be displayed
 
@@ -127,14 +148,19 @@ Access via **Edit → Settings** to customize:
 - 👁️ **Display Options** - Show only open ports
 
 #### 🕵️ **Advanced Tab**
+- 🧩 **Fragmented Packet Scanning** - **NEW!** Split packets into IP fragments to evade basic firewalls and IDS
+  - ✅ **System Check** - Automatic detection of raw socket availability
+  - 🔑 **Privilege Requirement** - Requires administrative privileges
+  - 🛡️ **Firewall Evasion** - Bypasses simple packet filters that don't reassemble fragments
 - 🎲 **Port Randomization** - Randomize scan order
 - ⏱️ **Variable Delays** - Add 300-700ms random delays
-- ⚠️ **Responsible Use Warning** - Ethical guidelines
+- 🚨 **Visual Indicators** - Red window border appears when any advanced feature is enabled
+- ⚠️ **Responsible Use Warning** - Ethical guidelines and legal reminders
 
 #### 📊 **Logging Tab**
 - 📝 **Export Formats** - TXT, CSV, JSON, XML
 - 📁 **Export Directory** - Choose save location
-- 🧹 **Log Management** - Clear old log files
+- 🧹 **Log Management** - **UPDATED!** Always-available log cleanup (no longer hidden when logging is disabled)
 
 ---
 
@@ -148,6 +174,14 @@ Access via **Edit → Settings** to customize:
 | 🏢 **Corporate Network** | 100-300 | Balance speed and stealth |
 | 🔥 **Internal Auditing** | 500-1000 | Maximum speed, no rate limiting |
 | 🚄 **Extreme Performance** | 1000+ | High-end systems, controlled environments |
+
+### 🥷 **Stealth vs Performance Trade-offs**
+
+| Feature | Performance Impact | Stealth Benefit | Best Use Case |
+|---------|------------------|-----------------|---------------|
+| 🧩 **Fragmented Scanning** | Minimal | High firewall evasion | Bypassing basic packet filters |
+| 🎲 **Port Randomization** | None | Medium pattern disruption | Avoiding sequential scan detection |
+| ⏱️ **Variable Delays** | High (slower) | High rate limit avoidance | External/remote scanning |
 
 ### 📊 **System Requirements by Thread Count**
 
@@ -163,27 +197,36 @@ Access via **Edit → Settings** to customize:
 - 🚀 **For modern systems:** 500-1000 threads work great for internal networks
 - 🌐 **For external scanning:** Use lower counts (50-200) to avoid rate limiting
 - ⚡ **For maximum speed:** Disable variable delays and use port randomization
+- 🧩 **For stealth:** Enable fragmented scanning with administrative privileges
 
 ---
 
-## 🔒 Ethical Usage
+## 🔒 Ethical Usage & Legal Compliance
 
-> ⚠️ **Important:** This tool is designed for legitimate network administration and security testing purposes only.
+> ⚠️ **Critical:** This tool includes advanced evasion techniques that must only be used ethically and legally.
 
 ### ✅ **Appropriate Use Cases:**
 - 🏢 Testing your own networks and systems
-- 🔍 Security audits with proper authorization
-- 📚 Educational and learning purposes
+- 🔍 Security audits with proper written authorization
+- 📚 Educational and learning purposes in controlled environments
 - 🛠️ Network troubleshooting and administration
 - 🚄 High-performance internal network scanning
+- 🛡️ **Penetration testing with explicit client permission**
 
 ### ❌ **Prohibited Activities:**
-- 🚫 Scanning networks without permission
-- 🚫 Unauthorized penetration testing
-- 🚫 Malicious network reconnaissance
+- 🚫 Scanning networks without explicit written permission
+- 🚫 Unauthorized penetration testing or security assessments
+- 🚫 Malicious network reconnaissance or intelligence gathering
+- 🚫 Using advanced evasion techniques against systems you don't own
 - 🚫 Any illegal or unethical activities
 
-**Always ensure you have explicit permission before scanning any network that you don't own.**
+### 🧩 **Fragmented Scanning Considerations:**
+- 🔑 **Administrative Privileges Required** - Raw socket access needs elevated permissions
+- 🛡️ **Firewall Evasion** - Specifically designed to bypass basic security controls
+- 📝 **Documentation Required** - Always document usage for legitimate security testing
+- 🏢 **Internal Use Recommended** - Most effective for controlled environment testing
+
+**⚖️ Legal Disclaimer:** Users are solely responsible for compliance with local, state, federal, and international laws. Advanced evasion features should only be used on networks you own or have explicit written authorization to test.
 
 ---
 
@@ -195,6 +238,15 @@ Access via **Edit → Settings** to customize:
 - **Threading:** ThreadPoolExecutor with intelligent resource management
 - **Performance:** System-aware thread optimization and batch processing
 - **Network:** Socket-based scanning with timeout controls
+- **Advanced Features:** Raw socket implementation for packet fragmentation
+
+### 🧩 **Fragmented Packet Scanning Engine**
+- 🔌 **Raw Socket Implementation** - Low-level packet crafting and transmission
+- 📦 **IP Fragment Construction** - Splits TCP/UDP headers across multiple IP fragments
+- 🎯 **Automatic Fallback** - Gracefully falls back to standard scanning when fragmented fails
+- 🖥️ **Cross-Platform Support** - Windows and Unix-like systems (with admin privileges)
+- 🔍 **Response Analysis** - Intelligent interpretation of fragmented responses
+- ⚡ **Performance Integration** - Full integration with threading and progress systems
 
 ### ⚡ **Threading Engine**
 - 🧠 **Intelligent Limits** - Automatically calculates optimal thread count based on:
@@ -205,19 +257,30 @@ Access via **Edit → Settings** to customize:
 - 📊 **Batch Processing** - Scales batch size with thread count for efficiency
 - 🛑 **Responsive Cancellation** - Immediate stop capability even with high thread counts
 
+### 🚨 **Advanced Mode Indicators**
+- 🔴 **Visual Window Border** - Red frame appears when any advanced feature is enabled
+- 📝 **Dynamic Window Title** - Shows "ADVANCED MODE" with active features list
+- 🏷️ **Result Tagging** - Scan results include method tags (Standard vs Fragmented)
+
 ### 📦 **Dependencies**
 - `tkinter` - GUI framework (included with Python)
-- `socket` - Network communication
+- `socket` - Network communication and raw socket access
 - `threading` - Concurrent execution
 - `json` - Configuration management
 - `csv`, `xml` - Export formats
 - `ipaddress` - CIDR network parsing
 - `concurrent.futures` - Advanced thread management
+- `struct` - Binary data handling for packet construction
 
 ### 🔧 **Configuration Storage**
 - **Windows:** `%APPDATA%\PortCheckerPlus\config.json`
 - **macOS:** `~/Library/Application Support/PortCheckerPlus/config.json`
 - **Linux:** `~/.config/PortCheckerPlus/config.json`
+
+### 🔑 **Privilege Requirements**
+- **Standard Scanning:** No special privileges required
+- **Fragmented Scanning:** Administrative/root privileges for raw socket access
+- **Automatic Detection:** System capability checking with helpful error messages
 
 ---
 
@@ -227,20 +290,22 @@ We welcome contributions! Here's how you can help:
 
 ### 🐛 **Bug Reports**
 - Use the [Issues](https://github.com/jackworthen/port-checker-plus/issues) tab
-- Include your OS, Python version, and steps to reproduce
+- Include your OS, Python version, privilege level, and steps to reproduce
+- For fragmented scanning issues, specify if admin privileges were used
 
 ### 🔧 **Pull Requests**
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feature-name`
 3. Make your changes with clear commit messages
-4. Test thoroughly (especially with different thread counts)
+4. Test thoroughly (especially with different thread counts and privilege levels)
 5. Submit a pull request
 
 ### 💡 **Feature Ideas**
 - 🚀 Additional performance optimizations
 - 🎨 UI/UX improvements
 - 📊 New export formats
-- 🔒 Enhanced security features
+- 🔒 Enhanced security and stealth features
+- 🧩 Additional evasion techniques
 
 ---
 
@@ -256,6 +321,11 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - 📖 [Documentation](https://github.com/jackworthen/port-checker-plus/wiki)
 - 🐛 [Issue Tracker](https://github.com/jackworthen/port-checker-plus/issues)
 - 💡 [Feature Requests](https://github.com/jackworthen/port-checker-plus/discussions)
+
+### 🔧 **Troubleshooting**
+- **Fragmented scanning not available?** Ensure you're running with administrative privileges
+- **Performance issues?** Check thread count recommendations for your system
+- **Advanced mode not showing?** Verify advanced features are enabled in settings
 
 ---
 
