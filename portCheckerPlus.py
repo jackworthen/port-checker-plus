@@ -862,7 +862,7 @@ def open_settings_window(root, config):
     
     settings_win = tk.Toplevel(root)
     settings_win.title("Settings - Port Checker Plus")
-    settings_win.geometry("520x800")  # Increased height for new options
+    settings_win.geometry("520x600")  # Increased height for new options
     settings_win.configure(bg="#ffffff")
     settings_win.transient(root)
     settings_win.grab_set()
@@ -1248,7 +1248,7 @@ def open_settings_window(root, config):
     clear_logs_section = tk.LabelFrame(export_frame, text="Log Management", 
                                       font=("Segoe UI", 10, "bold"), bg="#ffffff", 
                                       fg="#34495e", padx=15, pady=10)
-    # Don't pack initially - will be controlled by toggle_export_inputs
+    clear_logs_section.pack(fill="x", padx=15, pady=10)  # Always visible now
     
     clear_logs_frame = tk.Frame(clear_logs_section, bg="#ffffff")
     clear_logs_frame.pack(fill="x", pady=5)
@@ -1326,16 +1326,9 @@ def open_settings_window(root, config):
         dir_entry.config(state=state)
         browse_btn.config(state=state)
         format_combo.config(state="readonly" if export_var.get() else tk.DISABLED)
-        clear_logs_btn.config(state=state)
+        # Clear logs button and info are always enabled - removed from toggle
         dir_label.config(fg="#2c3e50" if export_var.get() else "#bdc3c7")
-        clear_logs_info.config(fg="#7f8c8d" if export_var.get() else "#bdc3c7")
         info_label.config(fg="#7f8c8d" if export_var.get() else "#bdc3c7")
-        
-        # Toggle the entire clear logs section visibility
-        if export_var.get():
-            clear_logs_section.pack(fill="x", padx=15, pady=10)
-        else:
-            clear_logs_section.pack_forget()
 
     export_check.config(command=toggle_export_inputs)
     toggle_export_inputs()
