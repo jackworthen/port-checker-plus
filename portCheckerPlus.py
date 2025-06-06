@@ -13,6 +13,7 @@ import webbrowser
 import csv
 import xml.etree.ElementTree as ET
 import random  # Added for port randomization
+import ipaddress  # Added for CIDR support
 
 import sys
 
@@ -48,7 +49,8 @@ default_config = {
     "scan_protocol": "TCP",
     "show_open_only": False,
     "randomize_ports": False,  # Added for port randomization
-    "variable_delay_scan": False  # Added for variable delay scanning
+    "variable_delay_scan": False,  # Added for variable delay scanning
+    "max_cidr_hosts": 254  # Added limit for CIDR scanning
 }
 
 # Define common port profiles
@@ -83,6 +85,8 @@ def load_config():
                     config["randomize_ports"] = False
                 if "variable_delay_scan" not in config:
                     config["variable_delay_scan"] = False
+                if "max_cidr_hosts" not in config:
+                    config["max_cidr_hosts"] = 254
                 return config
         except json.JSONDecodeError:
             pass
@@ -119,6 +123,55 @@ def parse_ports(port_input):
             except ValueError:
                 continue
     return ports
+
+def is_cidr_notation(host_input):
+    """Check if the input is in CIDR notation"""
+    try:
+        ipaddress.ip_network(host_input, strict=False)
+        return True
+    except ValueError:
+        return False
+
+def parse_cidr_hosts(host_input, config):
+    """Parse CIDR notation and return list of host IPs"""
+    try:
+        network = ipaddress.ip_network(host_input, strict=False)
+        hosts = []
+        max_hosts = config.get("max_cidr_hosts", 254)
+        
+        # For networks larger than max_hosts, warn user
+        if network.num_addresses > max_hosts + 2:  # +2 for network and broadcast
+            response = messagebox.askyesno(
+                "Large Network Range", 
+                f"The network {host_input} contains {network.num_addresses} addresses.\n"
+                f"This will scan {min(network.num_addresses, max_hosts)} hosts.\n"
+                f"This may take a significant amount of time.\n\n"
+                f"Do you want to continue?",
+                icon="warning"
+            )
+            if not response:
+                return None
+        
+        # Get host addresses (excluding network and broadcast for /31 and smaller)
+        host_count = 0
+        for ip in network.hosts():
+            if host_count >= max_hosts:
+                break
+            hosts.append(str(ip))
+            host_count += 1
+        
+        # If no hosts() (like /31 or /32), use all addresses
+        if not hosts:
+            for ip in network:
+                if host_count >= max_hosts:
+                    break
+                hosts.append(str(ip))
+                host_count += 1
+                
+        return hosts
+    except ValueError as e:
+        messagebox.showerror("CIDR Error", f"Invalid CIDR notation: {e}")
+        return None
 
 def get_matching_profile(config):
     """Determine which profile matches current config"""
@@ -231,26 +284,49 @@ def export_results_to_file(scan_data, scan_results, config):
         messagebox.showerror("Export Error", f"Could not export results:\n{e}")
 
 def export_to_txt(file_path, scan_data, scan_results):
-    """Export results to TXT format (original format)"""
+    """Export results to TXT format (updated for CIDR support)"""
     with open(file_path, "a") as f:
         f.write("\n" + "=" * 50 + "\n")
         f.write(f"Scan Results: {scan_data['timestamp']}\n")
-        f.write(f"Host: {scan_data['host']}\n")
-        f.write(f"Resolved IP: {scan_data['resolved_ip']}\n")
+        f.write(f"Target: {scan_data['host_input']}\n")
+        if scan_data.get('is_cidr', False):
+            f.write(f"Network Range: {len(scan_data.get('scanned_hosts', []))} hosts\n")
+        else:
+            f.write(f"Resolved IP: {scan_data.get('resolved_ip', 'N/A')}\n")
         f.write(f"Ports: {scan_data['port_input']}\n")
         f.write(f"Protocol: {scan_data['protocol']}\n")
         f.write("=" * 50 + "\n\n")
         
-        for result in scan_results:
-            status_text = f"{result['protocol']} Port {result['port']} is {result['status']}"
-            if result['service'] and result['service'] != 'Unknown':
-                status_text += f" (Service: {result['service']})"
-            if result['response_time'] > 0:
-                status_text += f" - {result['response_time']}ms"
-            f.write(status_text + "\n")
+        # Group results by host
+        if scan_data.get('is_cidr', False):
+            host_results = {}
+            for result in scan_results:
+                host = result['host']
+                if host not in host_results:
+                    host_results[host] = []
+                host_results[host].append(result)
+            
+            for host, results in host_results.items():
+                f.write(f"\nHost: {host}\n")
+                f.write("-" * 30 + "\n")
+                for result in results:
+                    status_text = f"{result['protocol']} Port {result['port']} is {result['status']}"
+                    if result['service'] and result['service'] != 'Unknown':
+                        status_text += f" (Service: {result['service']})"
+                    if result['response_time'] > 0:
+                        status_text += f" - {result['response_time']}ms"
+                    f.write(status_text + "\n")
+        else:
+            for result in scan_results:
+                status_text = f"{result['protocol']} Port {result['port']} is {result['status']}"
+                if result['service'] and result['service'] != 'Unknown':
+                    status_text += f" (Service: {result['service']})"
+                if result['response_time'] > 0:
+                    status_text += f" - {result['response_time']}ms"
+                f.write(status_text + "\n")
 
 def export_to_csv(file_path, scan_data, scan_results):
-    """Export results to CSV format"""
+    """Export results to CSV format (updated for CIDR support)"""
     file_exists = os.path.exists(file_path)
     
     with open(file_path, "a", newline='', encoding='utf-8') as f:
@@ -258,14 +334,14 @@ def export_to_csv(file_path, scan_data, scan_results):
         
         # Write header if file is new
         if not file_exists:
-            writer.writerow(["Timestamp", "Host", "Resolved IP", "Port", "Protocol", "Status", "Service", "Response Time (ms)"])
+            writer.writerow(["Timestamp", "Target", "Host", "Port", "Protocol", "Status", "Service", "Response Time (ms)"])
         
         # Write scan results
         for result in scan_results:
             writer.writerow([
                 scan_data['timestamp'],
-                scan_data['host'],
-                scan_data['resolved_ip'],
+                scan_data['host_input'],
+                result['host'],
                 result['port'],
                 result['protocol'],
                 result['status'],
@@ -274,7 +350,7 @@ def export_to_csv(file_path, scan_data, scan_results):
             ])
 
 def export_to_json(file_path, scan_data, scan_results):
-    """Export results to JSON format"""
+    """Export results to JSON format (updated for CIDR support)"""
     # Load existing data if file exists
     scan_history = []
     if os.path.exists(file_path):
@@ -290,6 +366,7 @@ def export_to_json(file_path, scan_data, scan_results):
         "results": scan_results,
         "summary": {
             "total_ports": len(scan_results),
+            "total_hosts": len(set(r['host'] for r in scan_results)) if scan_data.get('is_cidr', False) else 1,
             "open_ports": len([r for r in scan_results if r['status'] == 'OPEN']),
             "closed_ports": len([r for r in scan_results if r['status'] == 'CLOSED']),
             "filtered_ports": len([r for r in scan_results if 'FILTERED' in r['status']]),
@@ -304,7 +381,7 @@ def export_to_json(file_path, scan_data, scan_results):
         json.dump(scan_history, f, indent=2, ensure_ascii=False)
 
 def export_to_xml(file_path, scan_data, scan_results):
-    """Export results to XML format"""
+    """Export results to XML format (updated for CIDR support)"""
     # Load existing XML or create new root
     if os.path.exists(file_path):
         try:
@@ -321,27 +398,58 @@ def export_to_xml(file_path, scan_data, scan_results):
     
     # Add scan info
     info_elem = ET.SubElement(scan_elem, "scan_info")
-    ET.SubElement(info_elem, "host").text = scan_data['host']
-    ET.SubElement(info_elem, "resolved_ip").text = scan_data['resolved_ip']
+    ET.SubElement(info_elem, "target").text = scan_data['host_input']
+    if scan_data.get('is_cidr', False):
+        ET.SubElement(info_elem, "scan_type").text = "CIDR"
+        ET.SubElement(info_elem, "hosts_scanned").text = str(len(scan_data.get('scanned_hosts', [])))
+    else:
+        ET.SubElement(info_elem, "scan_type").text = "Single Host"
+        ET.SubElement(info_elem, "resolved_ip").text = scan_data.get('resolved_ip', 'N/A')
     ET.SubElement(info_elem, "ports").text = scan_data['port_input']
     ET.SubElement(info_elem, "protocol").text = scan_data['protocol']
     
-    # Add results
+    # Add results grouped by host if CIDR
     results_elem = ET.SubElement(scan_elem, "results")
-    for result in scan_results:
-        port_elem = ET.SubElement(results_elem, "port")
-        port_elem.set("number", str(result['port']))
-        port_elem.set("protocol", result['protocol'])
-        port_elem.set("status", result['status'])
+    if scan_data.get('is_cidr', False):
+        # Group by host
+        host_results = {}
+        for result in scan_results:
+            host = result['host']
+            if host not in host_results:
+                host_results[host] = []
+            host_results[host].append(result)
         
-        if result['service']:
-            port_elem.set("service", result['service'])
-        if result['response_time'] > 0:
-            port_elem.set("response_time", f"{result['response_time']}ms")
+        for host, results in host_results.items():
+            host_elem = ET.SubElement(results_elem, "host")
+            host_elem.set("ip", host)
+            
+            for result in results:
+                port_elem = ET.SubElement(host_elem, "port")
+                port_elem.set("number", str(result['port']))
+                port_elem.set("protocol", result['protocol'])
+                port_elem.set("status", result['status'])
+                
+                if result['service']:
+                    port_elem.set("service", result['service'])
+                if result['response_time'] > 0:
+                    port_elem.set("response_time", f"{result['response_time']}ms")
+    else:
+        for result in scan_results:
+            port_elem = ET.SubElement(results_elem, "port")
+            port_elem.set("host", result['host'])
+            port_elem.set("number", str(result['port']))
+            port_elem.set("protocol", result['protocol'])
+            port_elem.set("status", result['status'])
+            
+            if result['service']:
+                port_elem.set("service", result['service'])
+            if result['response_time'] > 0:
+                port_elem.set("response_time", f"{result['response_time']}ms")
     
     # Add summary
     summary_elem = ET.SubElement(scan_elem, "summary")
     summary_elem.set("total_ports", str(len(scan_results)))
+    summary_elem.set("total_hosts", str(len(set(r['host'] for r in scan_results)) if scan_data.get('is_cidr', False) else 1))
     summary_elem.set("open_ports", str(len([r for r in scan_results if r['status'] == 'OPEN'])))
     summary_elem.set("closed_ports", str(len([r for r in scan_results if r['status'] == 'CLOSED'])))
     summary_elem.set("filtered_ports", str(len([r for r in scan_results if 'FILTERED' in r['status']])))
@@ -355,7 +463,7 @@ def export_to_xml(file_path, scan_data, scan_results):
 def open_settings_window(root, config):
     settings_win = tk.Toplevel(root)
     settings_win.title("Settings - Port Checker Plus")
-    settings_win.geometry("520x650")  # Increased height for new tab
+    settings_win.geometry("520x700")  # Increased height for new options
     settings_win.configure(bg="#ffffff")
     settings_win.transient(root)
     settings_win.grab_set()
@@ -413,11 +521,13 @@ def open_settings_window(root, config):
     defaults_section.pack(fill="x", padx=15, pady=10)
 
     # Default host
-    tk.Label(defaults_section, text="Default Host:", font=("Segoe UI", 10), 
+    tk.Label(defaults_section, text="Default Host/Network:", font=("Segoe UI", 10), 
              bg="#ffffff", fg="#2c3e50").pack(anchor="w", pady=(5, 2))
+    tk.Label(defaults_section, text="Examples: 192.168.1.1 or 192.168.1.0/24", 
+             font=("Segoe UI", 9), bg="#ffffff", fg="#7f8c8d").pack(anchor="w")
     host_entry = tk.Entry(defaults_section, font=("Segoe UI", 10), width=50)
     host_entry.insert(0, config.get("default_host", ""))
-    host_entry.pack(fill="x", pady=(0, 15))
+    host_entry.pack(fill="x", pady=(5, 15))
 
     # Default ports
     tk.Label(defaults_section, text="Default Ports:", font=("Segoe UI", 10), 
@@ -511,6 +621,29 @@ def open_settings_window(root, config):
     retry_spin.delete(0, tk.END)
     retry_spin.insert(0, str(config.get("retry_count", 2)))
     retry_spin.pack(side="right")
+
+    # CIDR Options Section
+    cidr_section = tk.LabelFrame(general_frame, text="Network Scanning Options", 
+                                font=("Segoe UI", 10, "bold"), bg="#ffffff", 
+                                fg="#34495e", padx=15, pady=10)
+    cidr_section.pack(fill="x", padx=15, pady=10)
+
+    # Max CIDR hosts
+    cidr_frame = tk.Frame(cidr_section, bg="#ffffff")
+    cidr_frame.pack(fill="x", pady=(5, 0))
+    tk.Label(cidr_frame, text="Max Hosts per CIDR Scan:", font=("Segoe UI", 10), 
+             bg="#ffffff", fg="#2c3e50").pack(side="left")
+    cidr_spin = tk.Spinbox(cidr_frame, from_=10, to=1024, width=8, font=("Segoe UI", 10))
+    cidr_spin.delete(0, tk.END)
+    cidr_spin.insert(0, str(config.get("max_cidr_hosts", 254)))
+    cidr_spin.pack(side="right")
+
+    # CIDR description
+    cidr_desc = tk.Label(cidr_section, 
+                        text="Limits the number of hosts scanned when using CIDR notation to prevent excessive scanning.", 
+                        font=("Segoe UI", 9), bg="#ffffff", fg="#7f8c8d", 
+                        wraplength=450, justify="left")
+    cidr_desc.pack(anchor="w", pady=(5, 0))
 
     # Display Options Section
     display_section = tk.LabelFrame(general_frame, text="Display Options", 
@@ -778,6 +911,12 @@ def open_settings_window(root, config):
                                        f"Valid port range: 0-65535")
                     return
 
+            # Validate max CIDR hosts
+            max_cidr_hosts = int(cidr_spin.get())
+            if max_cidr_hosts < 1:
+                messagebox.showerror("Invalid Input", "Max CIDR hosts must be at least 1.")
+                return
+
             # Validate export directory if export is enabled
             if export_var.get():
                 export_path = dir_entry.get().strip()
@@ -801,8 +940,9 @@ def open_settings_window(root, config):
             config["retry_count"] = int(retry_spin.get())
             config["default_ports"] = port_input
             config["scan_protocol"] = protocol_var.get()
-            config["randomize_ports"] = randomize_ports_var.get()  # Save port randomization setting
-            config["variable_delay_scan"] = variable_delay_var.get()  # Save variable delay setting
+            config["randomize_ports"] = randomize_ports_var.get()
+            config["variable_delay_scan"] = variable_delay_var.get()
+            config["max_cidr_hosts"] = max_cidr_hosts
             
             if export_var.get():
                 config["export_directory"] = dir_entry.get().strip()
@@ -859,6 +999,7 @@ def resolve_hostname_and_print(host, results_tree, config):
             time.sleep(0.5)
 
 file_lock = threading.Lock()
+stop_scan_event = threading.Event()
 
 def get_port_category(port):
     """All ports use the same category now - simplified"""
@@ -866,12 +1007,20 @@ def get_port_category(port):
 
 def scan_port_with_export(host, port, results_tree, config, scan_results):
     try:
+        # Check if scan should be stopped
+        if stop_scan_event.is_set():
+            return
+            
         # Add variable delay if enabled
         if config.get("variable_delay_scan", False):
             base_delay = 0.2  # Base delay of 200ms
             jitter = random.uniform(0.1, 0.5)  # Random jitter between 100-500ms
             time.sleep(base_delay + jitter)  # Total delay: 300-700ms
         
+        # Check again after delay
+        if stop_scan_event.is_set():
+            return
+            
         start_time = time.time()
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.settimeout(config.get("timeout", 0.3))
@@ -888,6 +1037,7 @@ def scan_port_with_export(host, port, results_tree, config, scan_results):
 
         # Create result data
         result_data = {
+            'host': host,  # Include host in result data
             'port': port,
             'protocol': 'TCP',
             'status': status,
@@ -904,7 +1054,12 @@ def scan_port_with_export(host, port, results_tree, config, scan_results):
             scan_results.append(result_data)
 
     except Exception as e:
+        # Don't add error data if scan was stopped
+        if stop_scan_event.is_set():
+            return
+            
         error_data = {
+            'host': host,
             'port': port,
             'protocol': 'TCP',
             'status': 'ERROR',
@@ -917,12 +1072,20 @@ def scan_port_with_export(host, port, results_tree, config, scan_results):
 
 def scan_udp_port(host, port, results_tree, config, scan_results):
     try:
+        # Check if scan should be stopped
+        if stop_scan_event.is_set():
+            return
+            
         # Add variable delay if enabled
         if config.get("variable_delay_scan", False):
             base_delay = 0.2  # Base delay of 200ms
             jitter = random.uniform(0.1, 0.5)  # Random jitter between 100-500ms
             time.sleep(base_delay + jitter)  # Total delay: 300-700ms
         
+        # Check again after delay
+        if stop_scan_event.is_set():
+            return
+            
         start_time = time.time()
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
             sock.settimeout(config.get("timeout", 0.3))
@@ -938,6 +1101,7 @@ def scan_udp_port(host, port, results_tree, config, scan_results):
                 response_time = round((end_time - start_time) * 1000, 1)
         
         result_data = {
+            'host': host,  # Include host in result data
             'port': port,
             'protocol': 'UDP',
             'status': status,
@@ -953,8 +1117,13 @@ def scan_udp_port(host, port, results_tree, config, scan_results):
             scan_results.append(result_data)
 
     except Exception as e:
+        # Don't add error data if scan was stopped
+        if stop_scan_event.is_set():
+            return
+            
         if not config.get("show_open_only", False):
             error_data = {
+                'host': host,
                 'port': port,
                 'protocol': 'UDP',
                 'status': 'ERROR',
@@ -969,6 +1138,7 @@ def update_results_tree(results_tree, scan_results):
     """Update the results tree with scan data and apply color coding"""
     for result in scan_results:
         values = (
+            result['host'],
             result['port'],
             result['protocol'],
             result['status'],
@@ -989,7 +1159,7 @@ def update_results_tree(results_tree, scan_results):
             
         results_tree.insert("", "end", values=values, tags=(tag,))
 
-def check_ports_threaded_with_export(host, ports, results_tree, clear_button, config, scan_data):
+def check_ports_threaded_with_export(hosts, ports, results_tree, clear_button, config, scan_data):
     clear_button.config(state=tk.NORMAL)
 
     protocol = root.protocol_var.get().upper()
@@ -1002,11 +1172,11 @@ def check_ports_threaded_with_export(host, ports, results_tree, clear_button, co
     # Calculate total expected scans
     total_scans = 0
     if protocol in ("TCP", "TCP/UDP"):
-        total_scans += len(ports)
+        total_scans += len(hosts) * len(ports)
     if protocol in ("UDP", "TCP/UDP"):
-        total_scans += len(ports)
+        total_scans += len(hosts) * len(ports)
 
-    counter = {"count": 0}
+    counter = {"count": 0, "completed": 0}
     counter_lock = threading.Lock()
     scan_results = []
 
@@ -1016,57 +1186,113 @@ def check_ports_threaded_with_export(host, ports, results_tree, clear_button, co
             # Update progress bar and status
             progress = (counter["count"] / total_scans) * 100
             root.progress_var.set(progress)
-            root.status_label.config(text=f"{counter['count']} of {total_scans} ports scanned")
+            
+            if stop_scan_event.is_set():
+                root.status_label.config(text=f"Scan stopped - {counter['count']} of {total_scans} scans completed")
+            else:
+                root.status_label.config(text=f"{counter['count']} of {total_scans} scans completed")
             
             if counter["count"] == total_scans:
+                counter["completed"] = 1
                 # Update the results tree when scanning is complete
                 results_tree.after(0, lambda: update_results_tree(results_tree, scan_results))
                 
-                # Export results after scanning is complete
-                if config.get("export_results", False):
+                # Export results after scanning is complete (only if not stopped)
+                if config.get("export_results", False) and not stop_scan_event.is_set():
                     try:
                         export_results_to_file(scan_data, scan_results, config)
                     except Exception as e:
                         messagebox.showerror("Export Error", f"Could not export results:\n{e}")
                 
-                # Update status label with completion message
-                root.status_label.config(text=f"Scan complete - {len(ports)} ports checked")
+                # Update status label and button state on main thread
+                def update_completion_ui():
+                    host_count = len(hosts)
+                    port_count = len(ports)
+                    if stop_scan_event.is_set():
+                        root.status_label.config(text=f"Scan stopped - {len(scan_results)} results collected")
+                        # Update stop button to show "Stopped" briefly before hiding
+                        root.stop_button.config(text="Stopped")
+                        # Hide stop button after 2 seconds and reset its state
+                        root.after(2000, lambda: (
+                            root.stop_button.pack_forget(),
+                            root.stop_button.config(state=tk.NORMAL, text="Stop Scan")
+                        ))
+                    else:
+                        root.status_label.config(text=f"Scan complete - {host_count} host(s), {port_count} port(s) checked")
+                        # For completed scans, hide stop button immediately
+                        root.stop_button.pack_forget()
+                        root.stop_button.config(state=tk.NORMAL, text="Stop Scan")
+                    
+                    # Always re-enable check button
+                    root.check_button.config(state=tk.NORMAL)
+                
+                # Schedule UI update on main thread
+                root.after(0, update_completion_ui)
+                
                 # Reset progress bar after completion
                 root.after(3000, lambda: (root.progress_var.set(0), root.status_label.config(text="Ready")))
 
-    def run_tcp_scan(p):
+    def run_tcp_scan(h, p):
         try:
-            scan_port_with_export(host, p, results_tree, config, scan_results)
+            if not stop_scan_event.is_set():
+                scan_port_with_export(h, p, results_tree, config, scan_results)
         finally:
             on_port_done()
 
-    def run_udp_scan(p):
+    def run_udp_scan(h, p):
         try:
-            scan_udp_port(host, p, results_tree, config, scan_results)
+            if not stop_scan_event.is_set():
+                scan_udp_port(h, p, results_tree, config, scan_results)
         finally:
             on_port_done()
 
-    for port in ports:
-        if protocol in ("TCP", "TCP/UDP"):
-            threading.Thread(target=run_tcp_scan, args=(port,), daemon=True).start()
-        if protocol in ("UDP", "TCP/UDP"):
-            threading.Thread(target=run_udp_scan, args=(port,), daemon=True).start()
+    for host in hosts:
+        if stop_scan_event.is_set():
+            break
+        for port in ports:
+            if stop_scan_event.is_set():
+                break
+            if protocol in ("TCP", "TCP/UDP"):
+                threading.Thread(target=run_tcp_scan, args=(host, port), daemon=True).start()
+            if protocol in ("UDP", "TCP/UDP"):
+                threading.Thread(target=run_udp_scan, args=(host, port), daemon=True).start()
 
 def on_check_ports_with_export():
     config = load_config()
-    host = root.host_entry.get().strip()
+    host_input = root.host_entry.get().strip()
     port_input = root.ports_entry.get().strip()
 
-    if not host or not port_input:
-        messagebox.showwarning("Input Error", "Please enter both host and port(s).")
+    if not host_input or not port_input:
+        messagebox.showwarning("Input Error", "Please enter both host/network and port(s).")
         return
 
     # Clear results tree
     clear_results_tree()
     
-    resolved_ip = resolve_hostname_and_print(host, root.results_tree, config)
-    if not resolved_ip:
-        return
+    # Reset stop event for new scan
+    stop_scan_event.clear()
+    
+    # Check if input is CIDR notation
+    if is_cidr_notation(host_input):
+        # Handle CIDR scanning
+        hosts = parse_cidr_hosts(host_input, config)
+        if hosts is None:
+            return  # User cancelled or error occurred
+        
+        if not hosts:
+            messagebox.showwarning("CIDR Error", "No valid hosts found in CIDR range.")
+            return
+        
+        # For CIDR, we don't resolve individual IPs since they're already IPs
+        is_cidr = True
+        resolved_ip = None
+    else:
+        # Handle single host scanning
+        resolved_ip = resolve_hostname_and_print(host_input, root.results_tree, config)
+        if not resolved_ip:
+            return
+        hosts = [resolved_ip]
+        is_cidr = False
 
     try:
         ports = parse_ports(port_input)
@@ -1076,9 +1302,18 @@ def on_check_ports_with_export():
             
         root.clear_button.config(state=tk.DISABLED)
         
+        # Disable check button and show stop button
+        root.check_button.config(state=tk.DISABLED)
+        root.stop_button.config(state=tk.NORMAL, text="Stop Scan")  # Ensure stop button is ready
+        root.stop_button.pack(side="left", padx=(0, 10), after=root.check_button)
+        
         # Initialize progress bar and show scanning status
         root.progress_var.set(0)
-        scan_status = f"Scanning {host} ({resolved_ip}) - {len(ports)} ports..."
+        if is_cidr:
+            scan_status = f"Scanning {host_input} ({len(hosts)} hosts) - {len(ports)} ports..."
+        else:
+            scan_status = f"Scanning {host_input} ({resolved_ip}) - {len(ports)} ports..."
+            
         if config.get("randomize_ports", False):
             scan_status += " (randomized order)"
         if config.get("variable_delay_scan", False):
@@ -1088,20 +1323,48 @@ def on_check_ports_with_export():
         # Prepare scan data for export
         scan_data = {
             'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            'host': host,
+            'host_input': host_input,
             'resolved_ip': resolved_ip,
             'port_input': port_input,
-            'protocol': root.protocol_var.get()
+            'protocol': root.protocol_var.get(),
+            'is_cidr': is_cidr,
+            'scanned_hosts': hosts if is_cidr else [resolved_ip]
         }
         
         threading.Thread(
             target=check_ports_threaded_with_export,
-            args=(host, ports, root.results_tree, root.clear_button, config, scan_data),
+            args=(hosts, ports, root.results_tree, root.clear_button, config, scan_data),
             daemon=True
         ).start()
         root.clear_button.config(state=tk.NORMAL)
     except Exception as e:
+        # Reset UI state on error
+        root.check_button.config(state=tk.NORMAL)
+        root.stop_button.pack_forget()
         messagebox.showerror("Error", str(e))
+
+def on_stop_scan():
+    """Stop the current scan"""
+    stop_scan_event.set()
+    root.status_label.config(text="Stopping scan...")
+    
+    # Disable stop button to prevent multiple clicks and change text
+    root.stop_button.config(state=tk.DISABLED, text="Stopping...")
+    
+    # Re-enable check button immediately so user can start new scan
+    root.check_button.config(state=tk.NORMAL)
+    
+    # Schedule the button state update after 1.5 seconds
+    def update_to_stopped():
+        if stop_scan_event.is_set():  # Only if still in stopped state
+            root.stop_button.config(text="Stopped")
+            # Hide stop button after 2 more seconds
+            root.after(2000, lambda: (
+                root.stop_button.pack_forget(),
+                root.stop_button.config(state=tk.NORMAL, text="Stop Scan")
+            ))
+    
+    root.after(1500, update_to_stopped)
 
 def clear_results_tree():
     """Clear the results tree"""
@@ -1111,6 +1374,11 @@ def clear_results_tree():
     # Reset progress bar and status when clearing
     root.progress_var.set(0)
     root.status_label.config(text="Ready")
+    # Reset UI state
+    root.check_button.config(state=tk.NORMAL)
+    root.stop_button.pack_forget()
+    root.stop_button.config(state=tk.NORMAL, text="Stop Scan")  # Reset stop button state
+    stop_scan_event.clear()
 
 def sort_treeview(tree, col, reverse):
     """Sort treeview by column"""
@@ -1122,6 +1390,12 @@ def sort_treeview(tree, col, reverse):
             data.sort(key=lambda x: int(x[0].replace('ms', '').replace('-', '0')), reverse=reverse)
         except ValueError:
             data.sort(reverse=reverse)
+    elif col == 'Host':
+        # Sort IP addresses properly
+        try:
+            data.sort(key=lambda x: ipaddress.ip_address(x[0]), reverse=reverse)
+        except ValueError:
+            data.sort(reverse=reverse)
     else:
         data.sort(reverse=reverse)
     
@@ -1129,7 +1403,7 @@ def sort_treeview(tree, col, reverse):
         tree.move(child, '', index)
     
     # Update column heading to show sort direction
-    for column in ['Port', 'Protocol', 'Status', 'Service', 'Response Time']:
+    for column in ['Host', 'Port', 'Protocol', 'Status', 'Service', 'Response Time']:
         if column == col:
             tree.heading(column, text=f"{column} {'↓' if reverse else '↑'}")
         else:
@@ -1159,15 +1433,15 @@ def filter_results():
     # Categorize items based on search criteria
     for item in root.results_tree.get_children():
         values = root.results_tree.item(item)['values']
-        if not values or len(values) < 5:
+        if not values or len(values) < 6:
             continue
             
-        port, protocol, status, service, response_time = values
+        host, port, protocol, status, service, response_time = values
         
         # Text search filter
         show_item = True
         if search_term:
-            searchable_text = f"{port} {protocol} {status} {service}".lower()
+            searchable_text = f"{host} {port} {protocol} {status} {service}".lower()
             if search_term not in searchable_text:
                 show_item = False
         
@@ -1219,7 +1493,7 @@ def run_gui():
     set_window_icon(root)
     root.title("Port Checker Plus")
     root.configure(bg="#f8f8f8")
-    root.geometry("1000x640")  # Increased size for better table display
+    root.geometry("1100x640")  # Increased width for additional column
 
     menubar = Menu(root)
     file_menu = Menu(menubar, tearoff=0)
@@ -1243,10 +1517,15 @@ def run_gui():
     # Host input
     host_frame = tk.Frame(input_frame, bg="#f8f8f8")
     host_frame.pack(fill="x", pady=(0, 5))
-    tk.Label(host_frame, text="Host:", bg="#f8f8f8", font=("Segoe UI", 10)).pack(side="left")
+    tk.Label(host_frame, text="Host/Network:", bg="#f8f8f8", font=("Segoe UI", 10)).pack(side="left")
     root.host_entry = tk.Entry(host_frame, width=40, font=("Segoe UI", 10))
     root.host_entry.pack(side="left", padx=(8, 0), fill="x", expand=True)
     root.host_entry.insert(0, config.get("default_host", ""))
+    
+    # Add example label for CIDR
+    cidr_example = tk.Label(host_frame, text="(e.g., 192.168.1.1 or 192.168.1.0/24)", 
+                           bg="#f8f8f8", font=("Segoe UI", 8), fg="#7f8c8d")
+    cidr_example.pack(side="right", padx=(10, 0))
 
     # Ports and protocol input
     port_protocol_frame = tk.Frame(input_frame, bg="#f8f8f8")
@@ -1269,10 +1548,17 @@ def run_gui():
     # Buttons
     button_frame = tk.Frame(input_frame, bg="#f8f8f8")
     button_frame.pack(fill="x", pady=(10, 0))
-    check_button = tk.Button(button_frame, text="Check Ports", font=("Segoe UI", 10), 
+    root.check_button = tk.Button(button_frame, text="Check Ports", font=("Segoe UI", 10), 
                             command=on_check_ports_with_export, bg="#3498db", fg="white",
                             activebackground="#2980b9", relief="flat", padx=20, pady=5)
-    check_button.pack(side="left", padx=(0, 10))
+    root.check_button.pack(side="left", padx=(0, 10))
+    
+    # Stop button (initially hidden)
+    root.stop_button = tk.Button(button_frame, text="Stop Scan", font=("Segoe UI", 10), 
+                                command=on_stop_scan, bg="#e74c3c", fg="white",
+                                activebackground="#c0392b", relief="flat", padx=20, pady=5)
+    # Don't pack initially - will be shown when scanning starts
+    
     root.clear_button = tk.Button(button_frame, text="Clear Results", font=("Segoe UI", 10), 
                                  command=clear_results_tree, state=tk.DISABLED, bg="#95a5a6", 
                                  fg="white", activebackground="#7f8c8d", relief="flat", padx=20, pady=5)
@@ -1306,11 +1592,12 @@ def run_gui():
     results_frame = tk.Frame(root, bg="#f8f8f8")
     results_frame.pack(padx=12, pady=(0, 10), fill="both", expand=True)
 
-    # Create Treeview with columns
-    columns = ('Port', 'Protocol', 'Status', 'Service', 'Response Time')
+    # Create Treeview with columns (added Host column)
+    columns = ('Host', 'Port', 'Protocol', 'Status', 'Service', 'Response Time')
     root.results_tree = ttk.Treeview(results_frame, columns=columns, show='headings', height=15)
 
     # Define column properties
+    root.results_tree.column('Host', width=120, anchor='center')
     root.results_tree.column('Port', width=80, anchor='center')
     root.results_tree.column('Protocol', width=80, anchor='center')
     root.results_tree.column('Status', width=120, anchor='center')
