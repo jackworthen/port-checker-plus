@@ -16,6 +16,7 @@ import random  # Added for port randomization
 import ipaddress  # Added for CIDR support
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import sys
+import struct
 
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
@@ -106,7 +107,8 @@ def get_default_config():
         "randomize_ports": False,  # Added for port randomization
         "variable_delay_scan": False,  # Added for variable delay scanning
         "max_cidr_hosts": 254,  # Added limit for CIDR scanning
-        "max_concurrent_threads": get_recommended_threads()  # Dynamic default based on system
+        "max_concurrent_threads": get_recommended_threads(),  # Dynamic default based on system
+        "fragmented_packets": False  # Added for fragmented packet scanning
     }
 
 # Get default config dynamically
@@ -130,6 +132,308 @@ PORT_PROFILES = {
     "Development": {"ports": "3000,3001,4000,5000,8000,8080,9000,5173,3001", "protocol": "TCP"}
 }
 
+# Fragmented Packet Scanner Implementation
+class FragmentedPacketScanner:
+    """
+    Implements fragmented packet scanning for stealth port scanning.
+    Requires administrative privileges for raw socket access.
+    """
+    
+    def __init__(self):
+        self.available = False
+        self.error_message = ""
+        self._check_availability()
+    
+    def _check_availability(self):
+        """Check if fragmented scanning is available on this system"""
+        try:
+            # Test raw socket creation
+            if platform.system() == "Windows":
+                # Windows requires special handling
+                test_sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
+                test_sock.close()
+            else:
+                # Unix-like systems
+                test_sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
+                test_sock.close()
+            self.available = True
+        except PermissionError:
+            self.error_message = "Administrative privileges required for fragmented scanning"
+        except OSError as e:
+            self.error_message = f"Raw sockets not available: {e}"
+        except Exception as e:
+            self.error_message = f"Fragmented scanning not supported: {e}"
+    
+    def _calculate_checksum(self, data):
+        """Calculate Internet checksum for packet data"""
+        # Ensure even number of bytes
+        if len(data) % 2:
+            data += b'\x00'
+        
+        checksum = 0
+        for i in range(0, len(data), 2):
+            checksum += (data[i] << 8) + data[i + 1]
+        
+        # Add carry
+        checksum = (checksum >> 16) + (checksum & 0xFFFF)
+        checksum += (checksum >> 16)
+        
+        # One's complement
+        return (~checksum) & 0xFFFF
+    
+    def _create_ip_header(self, src_ip, dest_ip, protocol, packet_id, flags, frag_offset, total_length):
+        """Create IP header with fragmentation support"""
+        # IP Header fields
+        version = 4
+        ihl = 5  # Internet Header Length (5 * 4 = 20 bytes)
+        tos = 0  # Type of Service
+        ttl = 64  # Time to Live
+        checksum = 0  # Will be calculated later
+        
+        # Pack flags and fragment offset (3 bits + 13 bits = 16 bits)
+        flags_and_frag = (flags << 13) | frag_offset
+        
+        # Pack IP header (without checksum)
+        ip_header = struct.pack(
+            '!BBHHHBBH4s4s',
+            (version << 4) + ihl,  # Version + IHL
+            tos,
+            total_length,
+            packet_id,
+            flags_and_frag,
+            ttl,
+            protocol,
+            checksum,
+            socket.inet_aton(src_ip),
+            socket.inet_aton(dest_ip)
+        )
+        
+        # Calculate and insert checksum
+        checksum = self._calculate_checksum(ip_header)
+        ip_header = struct.pack(
+            '!BBHHHBBH4s4s',
+            (version << 4) + ihl,
+            tos,
+            total_length,
+            packet_id,
+            flags_and_frag,
+            ttl,
+            protocol,
+            checksum,
+            socket.inet_aton(src_ip),
+            socket.inet_aton(dest_ip)
+        )
+        
+        return ip_header
+    
+    def _create_tcp_header(self, src_port, dest_port, seq=0, ack=0, flags=0x02):
+        """Create TCP header with SYN flag (default)"""
+        # TCP Header fields
+        offset_reserved = (5 << 4) + 0  # Data offset (5 * 4 = 20 bytes) + reserved
+        window = socket.htons(5840)  # Window size
+        checksum = 0  # Will be calculated with pseudo header
+        urgent_ptr = 0
+        
+        tcp_header = struct.pack(
+            '!HHLLBBHHH',
+            src_port,
+            dest_port,
+            seq,
+            ack,
+            offset_reserved,
+            flags,
+            window,
+            checksum,
+            urgent_ptr
+        )
+        
+        return tcp_header
+    
+    def _create_udp_header(self, src_port, dest_port, data=b''):
+        """Create UDP header"""
+        length = 8 + len(data)  # UDP header is 8 bytes + data
+        checksum = 0  # Simplified - not calculating UDP checksum
+        
+        udp_header = struct.pack(
+            '!HHHH',
+            src_port,
+            dest_port,
+            length,
+            checksum
+        )
+        
+        return udp_header + data
+    
+    def _get_local_ip(self, target_ip):
+        """Get local IP address for the route to target"""
+        try:
+            # Create a socket to determine local IP
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.connect((target_ip, 80))
+                return s.getsockname()[0]
+        except:
+            return "127.0.0.1"  # Fallback
+    
+    def scan_tcp_fragmented(self, target_ip, target_port, timeout=1.0):
+        """
+        Perform fragmented TCP SYN scan.
+        Splits TCP header across multiple IP fragments.
+        """
+        if not self.available:
+            return None, self.error_message
+        
+        try:
+            src_ip = self._get_local_ip(target_ip)
+            src_port = random.randint(32768, 65535)
+            packet_id = random.randint(1, 65535)
+            
+            # Create TCP header
+            tcp_header = self._create_tcp_header(src_port, target_port)
+            
+            # Fragment the TCP header
+            # Fragment 1: First 8 bytes of TCP header (src_port, dest_port, seq_num first 4 bytes)
+            fragment1_data = tcp_header[:8]
+            # Fragment 2: Remaining TCP header (contains the SYN flag)
+            fragment2_data = tcp_header[8:]
+            
+            # Create raw socket
+            if platform.system() == "Windows":
+                sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
+                sock.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
+            else:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
+            
+            sock.settimeout(timeout)
+            
+            # Fragment 1: More Fragments flag set (0x1), offset 0
+            frag1_total_len = 20 + len(fragment1_data)  # IP header + data
+            ip_header1 = self._create_ip_header(src_ip, target_ip, socket.IPPROTO_TCP, 
+                                              packet_id, 0x1, 0, frag1_total_len)
+            packet1 = ip_header1 + fragment1_data
+            
+            # Fragment 2: No more fragments (0x0), offset 1 (8 bytes)
+            frag2_total_len = 20 + len(fragment2_data)  # IP header + data
+            ip_header2 = self._create_ip_header(src_ip, target_ip, socket.IPPROTO_TCP, 
+                                              packet_id, 0x0, 1, frag2_total_len)
+            packet2 = ip_header2 + fragment2_data
+            
+            start_time = time.time()
+            
+            # Send fragments with small delay
+            sock.sendto(packet1, (target_ip, 0))
+            time.sleep(0.001)  # 1ms delay between fragments
+            sock.sendto(packet2, (target_ip, 0))
+            
+            # Try to receive response (simplified - just check if we get anything back)
+            try:
+                sock.settimeout(timeout)
+                data, addr = sock.recvfrom(1024)
+                end_time = time.time()
+                response_time = round((end_time - start_time) * 1000, 1)
+                
+                # Basic response analysis
+                if len(data) >= 20:  # At least IP header
+                    # Extract IP header
+                    ip_header = data[:20]
+                    protocol = struct.unpack('!B', ip_header[9:10])[0]
+                    
+                    if protocol == socket.IPPROTO_TCP and len(data) >= 40:
+                        # Extract TCP header
+                        tcp_header = data[20:40]
+                        flags = struct.unpack('!B', tcp_header[13:14])[0]
+                        
+                        if flags & 0x12:  # SYN+ACK
+                            sock.close()
+                            return "OPEN", response_time
+                        elif flags & 0x04:  # RST
+                            sock.close()
+                            return "CLOSED", response_time
+                
+                sock.close()
+                return "OPEN|FILTERED", response_time
+                
+            except socket.timeout:
+                sock.close()
+                end_time = time.time()
+                response_time = round((end_time - start_time) * 1000, 1)
+                return "FILTERED", response_time
+            
+        except Exception as e:
+            return "ERROR", str(e)
+    
+    def scan_udp_fragmented(self, target_ip, target_port, timeout=1.0):
+        """
+        Perform fragmented UDP scan.
+        Splits UDP header and data across fragments.
+        """
+        if not self.available:
+            return None, self.error_message
+        
+        try:
+            src_ip = self._get_local_ip(target_ip)
+            src_port = random.randint(32768, 65535)
+            packet_id = random.randint(1, 65535)
+            
+            # Create UDP packet with some test data
+            test_data = b"FRAGMENTED_UDP_SCAN"
+            udp_packet = self._create_udp_header(src_port, target_port, test_data)
+            
+            # Fragment the UDP packet
+            # Fragment 1: UDP header (8 bytes)
+            fragment1_data = udp_packet[:8]
+            # Fragment 2: UDP data
+            fragment2_data = udp_packet[8:]
+            
+            # Create raw socket
+            if platform.system() == "Windows":
+                sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_UDP)
+                sock.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
+            else:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
+            
+            sock.settimeout(timeout)
+            
+            # Fragment 1: More Fragments flag set (0x1), offset 0
+            frag1_total_len = 20 + len(fragment1_data)  # IP header + data
+            ip_header1 = self._create_ip_header(src_ip, target_ip, socket.IPPROTO_UDP, 
+                                              packet_id, 0x1, 0, frag1_total_len)
+            packet1 = ip_header1 + fragment1_data
+            
+            # Fragment 2: No more fragments (0x0), offset 1 (8 bytes)
+            frag2_total_len = 20 + len(fragment2_data)  # IP header + data
+            ip_header2 = self._create_ip_header(src_ip, target_ip, socket.IPPROTO_UDP, 
+                                              packet_id, 0x0, 1, frag2_total_len)
+            packet2 = ip_header2 + fragment2_data
+            
+            start_time = time.time()
+            
+            # Send fragments
+            sock.sendto(packet1, (target_ip, 0))
+            time.sleep(0.001)  # 1ms delay between fragments
+            sock.sendto(packet2, (target_ip, 0))
+            
+            # Try to receive response
+            try:
+                sock.settimeout(timeout)
+                data, addr = sock.recvfrom(1024)
+                end_time = time.time()
+                response_time = round((end_time - start_time) * 1000, 1)
+                
+                sock.close()
+                return "OPEN", response_time
+                
+            except socket.timeout:
+                sock.close()
+                end_time = time.time()
+                response_time = round((end_time - start_time) * 1000, 1)
+                return "OPEN|FILTERED", response_time
+            
+        except Exception as e:
+            return "ERROR", str(e)
+
+# Global fragmented scanner instance
+fragmented_scanner = FragmentedPacketScanner()
+
 # Port categorization removed - all open ports will be green
 
 def load_config():
@@ -152,6 +456,8 @@ def load_config():
                     config["max_cidr_hosts"] = 254
                 if "max_concurrent_threads" not in config:
                     config["max_concurrent_threads"] = get_recommended_threads()
+                if "fragmented_packets" not in config:
+                    config["fragmented_packets"] = False
                 return config
         except json.JSONDecodeError:
             pass
@@ -287,24 +593,34 @@ def update_profile_indicator():
             fg=colors["fg"]
         )
 
-def update_advanced_options_indicator():
-    """Update the advanced options indicator label"""
-    if hasattr(root, 'advanced_label'):
+def update_advanced_window_appearance():
+    """Update the window title and frame border based on advanced settings"""
+    if hasattr(root, 'title'):
         config = load_config()
         randomize_enabled = config.get("randomize_ports", False)
         delay_enabled = config.get("variable_delay_scan", False)
+        fragmented_enabled = config.get("fragmented_packets", False)
         
-        if randomize_enabled or delay_enabled:
-            root.advanced_label.config(
-                text=" Advanced Options Enabled ",
-                bg="#e74c3c",  # Red background
-                fg="white"
-            )
-            # Show the label by packing it
-            root.advanced_label.pack(side="left", padx=(0, 15))
+        if randomize_enabled or delay_enabled or fragmented_enabled:
+            # Build feature list for title
+            features = []
+            if randomize_enabled:
+                features.append("Random")
+            if delay_enabled:
+                features.append("Delay")
+            if fragmented_enabled:
+                features.append("Fragmented")
+            
+            # Update window title with advanced features
+            advanced_title = f"Port Checker Plus - ADVANCED MODE ({', '.join(features)})"
+            root.title(advanced_title)
+            
+            # Add red border effect
+            root.configure(highlightbackground="#e74c3c", highlightthickness=3, highlightcolor="#e74c3c")
         else:
-            # Hide the label by removing it from pack
-            root.advanced_label.pack_forget()
+            # Reset to normal appearance
+            root.title("Port Checker Plus")
+            root.configure(highlightbackground="#d0d0d0", highlightthickness=1, highlightcolor="#d0d0d0")
 
 def open_documentation():
     """Open the documentation URL in the default browser"""
@@ -360,6 +676,8 @@ def export_to_txt(file_path, scan_data, scan_results):
             f.write(f"Resolved IP: {scan_data.get('resolved_ip', 'N/A')}\n")
         f.write(f"Ports: {scan_data['port_input']}\n")
         f.write(f"Protocol: {scan_data['protocol']}\n")
+        if scan_data.get('fragmented_used', False):
+            f.write("Fragmented Scanning: Enabled\n")
         f.write("=" * 50 + "\n\n")
         
         # Group results by host
@@ -380,6 +698,8 @@ def export_to_txt(file_path, scan_data, scan_results):
                         status_text += f" (Service: {result['service']})"
                     if result['response_time'] > 0:
                         status_text += f" - {result['response_time']}ms"
+                    if result.get('scan_method'):
+                        status_text += f" [{result['scan_method']}]"
                     f.write(status_text + "\n")
         else:
             for result in scan_results:
@@ -388,6 +708,8 @@ def export_to_txt(file_path, scan_data, scan_results):
                     status_text += f" (Service: {result['service']})"
                 if result['response_time'] > 0:
                     status_text += f" - {result['response_time']}ms"
+                if result.get('scan_method'):
+                    status_text += f" [{result['scan_method']}]"
                 f.write(status_text + "\n")
 
 def export_to_csv(file_path, scan_data, scan_results):
@@ -399,7 +721,7 @@ def export_to_csv(file_path, scan_data, scan_results):
         
         # Write header if file is new
         if not file_exists:
-            writer.writerow(["Timestamp", "Target", "Host", "Port", "Protocol", "Status", "Service", "Response Time (ms)"])
+            writer.writerow(["Timestamp", "Target", "Host", "Port", "Protocol", "Status", "Service", "Response Time (ms)", "Scan Method"])
         
         # Write scan results
         for result in scan_results:
@@ -411,7 +733,8 @@ def export_to_csv(file_path, scan_data, scan_results):
                 result['protocol'],
                 result['status'],
                 result['service'],
-                result['response_time'] if result['response_time'] > 0 else ""
+                result['response_time'] if result['response_time'] > 0 else "",
+                result.get('scan_method', 'Standard')
             ])
 
 def export_to_json(file_path, scan_data, scan_results):
@@ -435,7 +758,8 @@ def export_to_json(file_path, scan_data, scan_results):
             "open_ports": len([r for r in scan_results if r['status'] == 'OPEN']),
             "closed_ports": len([r for r in scan_results if r['status'] == 'CLOSED']),
             "filtered_ports": len([r for r in scan_results if 'FILTERED' in r['status']]),
-            "error_ports": len([r for r in scan_results if r['status'] == 'ERROR'])
+            "error_ports": len([r for r in scan_results if r['status'] == 'ERROR']),
+            "fragmented_scans": len([r for r in scan_results if r.get('scan_method') == 'Fragmented'])
         }
     }
     
@@ -472,6 +796,8 @@ def export_to_xml(file_path, scan_data, scan_results):
         ET.SubElement(info_elem, "resolved_ip").text = scan_data.get('resolved_ip', 'N/A')
     ET.SubElement(info_elem, "ports").text = scan_data['port_input']
     ET.SubElement(info_elem, "protocol").text = scan_data['protocol']
+    if scan_data.get('fragmented_used', False):
+        ET.SubElement(info_elem, "fragmented_scanning").text = "true"
     
     # Add results grouped by host if CIDR
     results_elem = ET.SubElement(scan_elem, "results")
@@ -498,6 +824,8 @@ def export_to_xml(file_path, scan_data, scan_results):
                     port_elem.set("service", result['service'])
                 if result['response_time'] > 0:
                     port_elem.set("response_time", f"{result['response_time']}ms")
+                if result.get('scan_method'):
+                    port_elem.set("scan_method", result['scan_method'])
     else:
         for result in scan_results:
             port_elem = ET.SubElement(results_elem, "port")
@@ -510,6 +838,8 @@ def export_to_xml(file_path, scan_data, scan_results):
                 port_elem.set("service", result['service'])
             if result['response_time'] > 0:
                 port_elem.set("response_time", f"{result['response_time']}ms")
+            if result.get('scan_method'):
+                port_elem.set("scan_method", result['scan_method'])
     
     # Add summary
     summary_elem = ET.SubElement(scan_elem, "summary")
@@ -519,6 +849,7 @@ def export_to_xml(file_path, scan_data, scan_results):
     summary_elem.set("closed_ports", str(len([r for r in scan_results if r['status'] == 'CLOSED'])))
     summary_elem.set("filtered_ports", str(len([r for r in scan_results if 'FILTERED' in r['status']])))
     summary_elem.set("error_ports", str(len([r for r in scan_results if r['status'] == 'ERROR'])))
+    summary_elem.set("fragmented_scans", str(len([r for r in scan_results if r.get('scan_method') == 'Fragmented'])))
     
     # Write XML
     tree = ET.ElementTree(root_elem)
@@ -531,7 +862,7 @@ def open_settings_window(root, config):
     
     settings_win = tk.Toplevel(root)
     settings_win.title("Settings - Port Checker Plus")
-    settings_win.geometry("520x750")  # Increased height for new options
+    settings_win.geometry("520x800")  # Increased height for new options
     settings_win.configure(bg="#ffffff")
     settings_win.transient(root)
     settings_win.grab_set()
@@ -800,6 +1131,39 @@ def open_settings_window(root, config):
                          wraplength=450, justify="left")
     delay_desc.pack(anchor="w", pady=(2, 15))
 
+    # Fragmented packet scanning option
+    fragmented_packets_var = tk.BooleanVar(value=config.get("fragmented_packets", False))
+    fragmented_check = tk.Checkbutton(stealth_section, 
+                                     text="Fragmented Packet Scanning", 
+                                     variable=fragmented_packets_var,
+                                     bg="#ffffff", font=("Segoe UI", 10), 
+                                     fg="#2c3e50", activebackground="#ffffff")
+    fragmented_check.pack(anchor="w", pady=(5, 0))
+
+    # Description for fragmented scanning
+    fragmented_desc = tk.Label(stealth_section, 
+                              text="Splits packets into fragments to evade basic firewalls and IDS. Requires administrative privileges.", 
+                              font=("Segoe UI", 9), bg="#ffffff", fg="#7f8c8d", 
+                              wraplength=450, justify="left")
+    fragmented_desc.pack(anchor="w", pady=(2, 10))
+
+    # Fragmented scanning availability status
+    if fragmented_scanner.available:
+        frag_status = tk.Label(stealth_section, 
+                              text="✅ Fragmented scanning is available on this system.", 
+                              font=("Segoe UI", 9), bg="#ffffff", fg="#27ae60", 
+                              wraplength=450, justify="left")
+    else:
+        frag_status = tk.Label(stealth_section, 
+                              text=f"❌ {fragmented_scanner.error_message}", 
+                              font=("Segoe UI", 9), bg="#ffffff", fg="#e74c3c", 
+                              wraplength=450, justify="left")
+        # Disable checkbox if not available
+        fragmented_check.config(state=tk.DISABLED)
+        fragmented_packets_var.set(False)
+    
+    frag_status.pack(anchor="w", pady=(0, 15))
+
     # Warning note
     warning_label = tk.Label(stealth_section, 
                             text="⚠️ Use advanced features responsibly and only on networks you own or have permission to test.", 
@@ -1062,6 +1426,13 @@ def open_settings_window(root, config):
                                            f"Cannot create export directory:\n{e}")
                         return
 
+            # Validate fragmented scanning if enabled
+            if fragmented_packets_var.get() and not fragmented_scanner.available:
+                messagebox.showwarning("Fragmented Scanning", 
+                                     f"Fragmented scanning is not available:\n{fragmented_scanner.error_message}\n\n"
+                                     f"This option will be disabled.")
+                fragmented_packets_var.set(False)
+
             # Save configuration
             config["timeout"] = timeout_val
             config["export_results"] = export_var.get()
@@ -1073,6 +1444,7 @@ def open_settings_window(root, config):
             config["scan_protocol"] = protocol_var.get()
             config["randomize_ports"] = randomize_ports_var.get()
             config["variable_delay_scan"] = variable_delay_var.get()
+            config["fragmented_packets"] = fragmented_packets_var.get()
             config["max_cidr_hosts"] = max_cidr_hosts
             config["max_concurrent_threads"] = max_threads
             
@@ -1092,8 +1464,8 @@ def open_settings_window(root, config):
                 # Update the profile indicator
                 update_profile_indicator()
                 
-                # Update the advanced options indicator
-                update_advanced_options_indicator()
+                # Update the advanced window appearance
+                update_advanced_window_appearance()
 
             messagebox.showinfo("Settings Saved", "Your settings have been saved successfully.")
             settings_win.destroy()
@@ -1160,7 +1532,44 @@ def scan_port_with_export(host, port, results_tree, config, scan_results):
         # Final check before actual scan
         if stop_scan_event.is_set():
             return False
-            
+        
+        # Try fragmented scanning if enabled
+        if config.get("fragmented_packets", False) and fragmented_scanner.available:
+            try:
+                frag_result, frag_response_time = fragmented_scanner.scan_tcp_fragmented(
+                    host, port, config.get("timeout", 0.3)
+                )
+                
+                if frag_result and frag_result != "ERROR":
+                    # Fragmented scan succeeded
+                    try:
+                        service = socket.getservbyport(port)
+                    except:
+                        service = 'Unknown'
+
+                    result_data = {
+                        'host': host,
+                        'port': port,
+                        'protocol': 'TCP',
+                        'status': frag_result,
+                        'service': service,
+                        'response_time': frag_response_time if isinstance(frag_response_time, (int, float)) else 0,
+                        'category': get_port_category(port),
+                        'scan_method': 'Fragmented'
+                    }
+
+                    if config.get("show_open_only", False) and "OPEN" not in frag_result:
+                        return True
+
+                    with file_lock:
+                        scan_results.append(result_data)
+                    
+                    return True
+                # If fragmented scan failed, fall through to normal scanning
+            except Exception as e:
+                print(f"Fragmented scan failed for {host}:{port} - {e}, falling back to normal scan")
+        
+        # Normal TCP scanning (original code)
         start_time = time.time()
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.settimeout(config.get("timeout", 0.3))
@@ -1187,7 +1596,8 @@ def scan_port_with_export(host, port, results_tree, config, scan_results):
             'status': status,
             'service': service,
             'response_time': response_time if status == "OPEN" else 0,
-            'category': get_port_category(port)
+            'category': get_port_category(port),
+            'scan_method': 'Standard'
         }
 
         if config.get("show_open_only", False) and status != "OPEN":
@@ -1211,7 +1621,8 @@ def scan_port_with_export(host, port, results_tree, config, scan_results):
             'status': 'ERROR',
             'service': str(e),
             'response_time': 0,
-            'category': 'error'
+            'category': 'error',
+            'scan_method': 'Standard'
         }
         with file_lock:
             scan_results.append(error_data)
@@ -1241,7 +1652,39 @@ def scan_udp_port(host, port, results_tree, config, scan_results):
         # Final check before actual scan
         if stop_scan_event.is_set():
             return False
+        
+        # Try fragmented scanning if enabled
+        if config.get("fragmented_packets", False) and fragmented_scanner.available:
+            try:
+                frag_result, frag_response_time = fragmented_scanner.scan_udp_fragmented(
+                    host, port, config.get("timeout", 0.3)
+                )
+                
+                if frag_result and frag_result != "ERROR":
+                    # Fragmented scan succeeded
+                    result_data = {
+                        'host': host,
+                        'port': port,
+                        'protocol': 'UDP',
+                        'status': frag_result,
+                        'service': 'Unknown',
+                        'response_time': frag_response_time if isinstance(frag_response_time, (int, float)) else 0,
+                        'category': get_port_category(port),
+                        'scan_method': 'Fragmented'
+                    }
+
+                    if config.get("show_open_only", False) and "OPEN" not in frag_result:
+                        return True
+
+                    with file_lock:
+                        scan_results.append(result_data)
+                    
+                    return True
+                # If fragmented scan failed, fall through to normal scanning
+            except Exception as e:
+                print(f"Fragmented UDP scan failed for {host}:{port} - {e}, falling back to normal scan")
             
+        # Normal UDP scanning (original code)
         start_time = time.time()
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
             sock.settimeout(config.get("timeout", 0.3))
@@ -1267,7 +1710,8 @@ def scan_udp_port(host, port, results_tree, config, scan_results):
             'status': status,
             'service': 'Unknown',
             'response_time': response_time if "OPEN" in status else 0,
-            'category': get_port_category(port)
+            'category': get_port_category(port),
+            'scan_method': 'Standard'
         }
 
         if config.get("show_open_only", False) and "OPEN" not in status:
@@ -1291,7 +1735,8 @@ def scan_udp_port(host, port, results_tree, config, scan_results):
                 'status': 'ERROR',
                 'service': str(e),
                 'response_time': 0,
-                'category': 'error'
+                'category': 'error',
+                'scan_method': 'Standard'
             }
             with file_lock:
                 scan_results.append(error_data)
@@ -1586,6 +2031,8 @@ def on_check_ports_with_export():
             scan_status += " (randomized)"
         if config.get("variable_delay_scan", False):
             scan_status += " (delayed)"
+        if config.get("fragmented_packets", False) and fragmented_scanner.available:
+            scan_status += " (fragmented)"
         root.status_label.config(text=scan_status)
         
         # Prepare scan data for export
@@ -1596,7 +2043,8 @@ def on_check_ports_with_export():
             'port_input': port_input,
             'protocol': root.protocol_var.get(),
             'is_cidr': is_cidr,
-            'scanned_hosts': hosts if is_cidr else [resolved_ip]
+            'scanned_hosts': hosts if is_cidr else [resolved_ip],
+            'fragmented_used': config.get("fragmented_packets", False) and fragmented_scanner.available
         }
         
         threading.Thread(
@@ -1780,11 +2228,11 @@ def run_gui():
     root.config(menu=menubar)
 
     # Input section
-    input_frame = tk.Frame(root, bg="#f8f8f8")
-    input_frame.pack(padx=12, pady=(15, 10), fill="x")
+    root.input_frame = tk.Frame(root, bg="#f8f8f8")
+    root.input_frame.pack(padx=12, pady=(15, 10), fill="x")
 
     # Host input
-    host_frame = tk.Frame(input_frame, bg="#f8f8f8")
+    host_frame = tk.Frame(root.input_frame, bg="#f8f8f8")
     host_frame.pack(fill="x", pady=(0, 5))
     tk.Label(host_frame, text="Host/Network:", bg="#f8f8f8", font=("Segoe UI", 10)).pack(side="left")
     root.host_entry = tk.Entry(host_frame, width=40, font=("Segoe UI", 10))
@@ -1797,7 +2245,7 @@ def run_gui():
     cidr_example.pack(side="right", padx=(10, 0))
 
     # Ports and protocol input
-    port_protocol_frame = tk.Frame(input_frame, bg="#f8f8f8")
+    port_protocol_frame = tk.Frame(root.input_frame, bg="#f8f8f8")
     port_protocol_frame.pack(fill="x", pady=5)
 
     # Ports
@@ -1815,7 +2263,7 @@ def run_gui():
     root.protocol_menu.pack(side="left", padx=(8, 0))
 
     # Buttons
-    button_frame = tk.Frame(input_frame, bg="#f8f8f8")
+    button_frame = tk.Frame(root.input_frame, bg="#f8f8f8")
     button_frame.pack(fill="x", pady=(10, 0))
     root.check_button = tk.Button(button_frame, text="Check Ports", font=("Segoe UI", 10), 
                             command=on_check_ports_with_export, bg="#3498db", fg="white",
@@ -1833,21 +2281,16 @@ def run_gui():
                                  fg="white", activebackground="#7f8c8d", relief="flat", padx=20, pady=5)
     root.clear_button.pack(side="left", padx=(0, 15))
     
-    # Advanced options indicator label
-    root.advanced_label = tk.Label(button_frame, text="", font=("Segoe UI", 9, "bold"), 
-                                  relief="solid", padx=10, pady=3, borderwidth=1)
-    # Don't pack initially - will be shown/hidden by update_advanced_options_indicator()
-    
     # Profile indicator label (positioned to the far right)
     root.profile_label = tk.Label(button_frame, text="", font=("Segoe UI", 10, "bold"), 
                                  relief="solid", padx=12, pady=5, borderwidth=1)
     root.profile_label.pack(side="right")
 
     # Filter section
-    filter_frame = tk.LabelFrame(root, text="Search Results", bg="#f8f8f8", font=("Segoe UI", 10, "bold"))
-    filter_frame.pack(padx=12, pady=(0, 10), fill="x")
+    root.filter_frame = tk.LabelFrame(root, text="Search Results", bg="#f8f8f8", font=("Segoe UI", 10, "bold"))
+    root.filter_frame.pack(padx=12, pady=(0, 10), fill="x")
 
-    filter_content = tk.Frame(filter_frame, bg="#f8f8f8")
+    filter_content = tk.Frame(root.filter_frame, bg="#f8f8f8")
     filter_content.pack(padx=10, pady=5, fill="x")
 
     # Search box
@@ -1858,12 +2301,12 @@ def run_gui():
     search_entry.bind('<KeyRelease>', lambda e: filter_results())
 
     # Results tree view
-    results_frame = tk.Frame(root, bg="#f8f8f8")
-    results_frame.pack(padx=12, pady=(0, 10), fill="both", expand=True)
+    root.results_frame = tk.Frame(root, bg="#f8f8f8")
+    root.results_frame.pack(padx=12, pady=(0, 10), fill="both", expand=True)
 
     # Create Treeview with columns (added Host column)
     columns = ('Host', 'Port', 'Protocol', 'Status', 'Service', 'Response Time')
-    root.results_tree = ttk.Treeview(results_frame, columns=columns, show='headings', height=15)
+    root.results_tree = ttk.Treeview(root.results_frame, columns=columns, show='headings', height=15)
 
     # Define column properties
     root.results_tree.column('Host', width=120, anchor='center')
@@ -1881,17 +2324,17 @@ def run_gui():
     # Add scrollbars using grid layout
     root.results_tree.grid(row=0, column=0, sticky="nsew")
     
-    v_scrollbar = ttk.Scrollbar(results_frame, orient="vertical", command=root.results_tree.yview)
+    v_scrollbar = ttk.Scrollbar(root.results_frame, orient="vertical", command=root.results_tree.yview)
     v_scrollbar.grid(row=0, column=1, sticky="ns")
     root.results_tree.configure(yscrollcommand=v_scrollbar.set)
     
-    h_scrollbar = ttk.Scrollbar(results_frame, orient="horizontal", command=root.results_tree.xview)
+    h_scrollbar = ttk.Scrollbar(root.results_frame, orient="horizontal", command=root.results_tree.xview)
     h_scrollbar.grid(row=1, column=0, sticky="ew")
     root.results_tree.configure(xscrollcommand=h_scrollbar.set)
 
     # Configure grid weights
-    results_frame.grid_rowconfigure(0, weight=1)
-    results_frame.grid_columnconfigure(0, weight=1)
+    root.results_frame.grid_rowconfigure(0, weight=1)
+    root.results_frame.grid_columnconfigure(0, weight=1)
 
     # Configure tags for color coding
     root.results_tree.tag_configure("open", foreground="#27ae60", font=("Segoe UI", 10, "bold"))
@@ -1901,21 +2344,21 @@ def run_gui():
     root.results_tree.tag_configure("hidden", foreground="#ffffff")
 
     # Progress bar and status frame
-    progress_frame = tk.Frame(root, bg="#f8f8f8")
-    progress_frame.pack(padx=12, pady=(0, 10), fill="x")
+    root.progress_frame = tk.Frame(root, bg="#f8f8f8")
+    root.progress_frame.pack(padx=12, pady=(0, 10), fill="x")
     
     # Status label
-    root.status_label = tk.Label(progress_frame, text="Ready", bg="#f8f8f8", font=("Segoe UI", 9))
+    root.status_label = tk.Label(root.progress_frame, text="Ready", bg="#f8f8f8", font=("Segoe UI", 9))
     root.status_label.pack(side="left")
     
     # Progress bar
     root.progress_var = tk.DoubleVar()
-    root.progress_bar = ttk.Progressbar(progress_frame, variable=root.progress_var, maximum=100, length=200)
+    root.progress_bar = ttk.Progressbar(root.progress_frame, variable=root.progress_var, maximum=100, length=200)
     root.progress_bar.pack(side="right", padx=(10, 0))
 
-    # Initialize the profile indicator and advanced options indicator
+    # Initialize the profile indicator and advanced window appearance
     update_profile_indicator()
-    update_advanced_options_indicator()
+    update_advanced_window_appearance()
 
     root.mainloop()
 
