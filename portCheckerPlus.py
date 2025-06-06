@@ -37,22 +37,80 @@ def get_config_path():
     config_dir.mkdir(parents=True, exist_ok=True)
     return config_dir / "config.json"
 
+def get_max_threads_limit():
+    """Calculate reasonable max threads based on system resources"""
+    try:
+        # Get system file descriptor limit
+        try:
+            import resource
+            soft_limit, hard_limit = resource.getrlimit(resource.RLIMIT_NOFILE)
+            # Use 20% of available file descriptors for more aggressive scanning
+            fd_based_limit = min(soft_limit // 5, 3000)
+            print(f"Debug: File descriptor limit: {soft_limit}, calculated fd_based_limit: {fd_based_limit}")
+        except (ImportError, AttributeError):
+            # Fallback for systems without resource module (Windows)
+            fd_based_limit = 2000
+            print(f"Debug: No resource module, using fd_based_limit: {fd_based_limit}")
+        
+        # CPU-based limit (much more generous for I/O bound tasks)
+        try:
+            cpu_count = os.cpu_count() or 4  # Fallback to 4 if cpu_count() returns None
+            cpu_based_limit = max(cpu_count * 20, 1000)  # Much more generous scaling, minimum 1000
+            print(f"Debug: CPU count: {cpu_count}, calculated cpu_based_limit: {cpu_based_limit}")
+        except:
+            cpu_based_limit = 1000  # Higher fallback
+            print(f"Debug: CPU count failed, using cpu_based_limit: {cpu_based_limit}")
+        
+        # Platform-specific adjustments (much less conservative)
+        if platform.system() == "Windows":
+            # Windows can handle more with modern versions
+            platform_limit = 2000
+        else:
+            platform_limit = 3000
+        print(f"Debug: Platform: {platform.system()}, platform_limit: {platform_limit}")
+        
+        # Return the most generous limit, but at least 1000, max 5000
+        calculated_limit = max(fd_based_limit, cpu_based_limit, platform_limit)  # Use MAX instead of MIN
+        final_limit = max(1000, min(calculated_limit, 5000))  # Minimum 1000 threads always
+        print(f"Debug: Final calculated limit: {final_limit}")
+        return final_limit
+    except Exception as e:
+        print(f"Warning: Could not calculate optimal thread limit ({e}), using default.")
+        return 2000  # Much higher fallback
+
+def get_recommended_threads():
+    """Get a recommended thread count for most users"""
+    max_limit = get_max_threads_limit()
+    # Recommend 25% of max limit, but at least 20 and at most 150
+    recommended = max_limit // 4
+    return max(20, min(recommended, 150))
+
+def get_safe_max_threads():
+    """Get a safe maximum that most systems can handle without issues"""
+    return min(get_max_threads_limit(), 1000)  # Increased from 200 to 1000
+
 CONFIG_PATH = str(get_config_path())
-default_config = {
-    "timeout": 0.3,
-    "export_results": False,
-    "export_directory": os.getcwd(),
-    "export_format": "TXT",
-    "default_host": "",
-    "default_ports": "",
-    "retry_count": 2,
-    "scan_protocol": "TCP",
-    "show_open_only": False,
-    "randomize_ports": False,  # Added for port randomization
-    "variable_delay_scan": False,  # Added for variable delay scanning
-    "max_cidr_hosts": 254,  # Added limit for CIDR scanning
-    "max_concurrent_threads": 20  # Added for concurrent thread control
-}
+
+# Note: get_recommended_threads() will be called after functions are defined
+def get_default_config():
+    return {
+        "timeout": 0.3,
+        "export_results": False,
+        "export_directory": os.getcwd(),
+        "export_format": "TXT",
+        "default_host": "",
+        "default_ports": "",
+        "retry_count": 2,
+        "scan_protocol": "TCP",
+        "show_open_only": False,
+        "randomize_ports": False,  # Added for port randomization
+        "variable_delay_scan": False,  # Added for variable delay scanning
+        "max_cidr_hosts": 254,  # Added limit for CIDR scanning
+        "max_concurrent_threads": get_recommended_threads()  # Dynamic default based on system
+    }
+
+# Get default config dynamically
+default_config = None  # Will be set in load_config()
 
 # Define common port profiles
 PORT_PROFILES = {
@@ -75,6 +133,10 @@ PORT_PROFILES = {
 # Port categorization removed - all open ports will be green
 
 def load_config():
+    global default_config
+    if default_config is None:
+        default_config = get_default_config()
+        
     if os.path.exists(CONFIG_PATH):
         try:
             with open(CONFIG_PATH, "r") as f:
@@ -89,7 +151,7 @@ def load_config():
                 if "max_cidr_hosts" not in config:
                     config["max_cidr_hosts"] = 254
                 if "max_concurrent_threads" not in config:
-                    config["max_concurrent_threads"] = 20
+                    config["max_concurrent_threads"] = get_recommended_threads()
                 return config
         except json.JSONDecodeError:
             pass
@@ -464,9 +526,12 @@ def export_to_xml(file_path, scan_data, scan_results):
     tree.write(file_path, encoding='utf-8', xml_declaration=True)
 
 def open_settings_window(root, config):
+    # Reload config to get latest saved settings
+    config = load_config()
+    
     settings_win = tk.Toplevel(root)
     settings_win.title("Settings - Port Checker Plus")
-    settings_win.geometry("520x700")  # Increased height for new options
+    settings_win.geometry("520x750")  # Increased height for new options
     settings_win.configure(bg="#ffffff")
     settings_win.transient(root)
     settings_win.grab_set()
@@ -625,15 +690,42 @@ def open_settings_window(root, config):
     retry_spin.insert(0, str(config.get("retry_count", 2)))
     retry_spin.pack(side="right")
 
-    # Max concurrent threads
+    # Max concurrent threads with dynamic limit
     threads_frame = tk.Frame(scan_section, bg="#ffffff")
-    threads_frame.pack(fill="x", pady=(0, 12))
+    threads_frame.pack(fill="x", pady=(0, 2))
     tk.Label(threads_frame, text="Max Concurrent Threads:", font=("Segoe UI", 10), 
              bg="#ffffff", fg="#2c3e50").pack(side="left")
-    threads_spin = tk.Spinbox(threads_frame, from_=1, to=100, width=8, font=("Segoe UI", 10))
+    
+    # Get system-specific max threads limit - allow high performance values
+    max_system_threads = get_max_threads_limit()
+    safe_max_threads = get_safe_max_threads()
+    
+    # Always allow at least 2000 threads regardless of system calculation
+    spinbox_max = max(max_system_threads, 2000)
+    
+    threads_spin = tk.Spinbox(threads_frame, from_=1, to=spinbox_max, width=8, font=("Segoe UI", 10))
     threads_spin.delete(0, tk.END)
-    threads_spin.insert(0, str(config.get("max_concurrent_threads", 20)))
+    threads_spin.insert(0, str(config.get("max_concurrent_threads", get_recommended_threads())))
     threads_spin.pack(side="right")
+
+    # Add comprehensive info label for thread limits (moved closer to the spinbox)
+    threads_info_frame = tk.Frame(scan_section, bg="#ffffff")
+    threads_info_frame.pack(fill="x", pady=(0, 5))
+    
+    # Multi-line guidance with color coding
+    recommended_text = f"Recommended: {get_recommended_threads()} | Safe Max: {safe_max_threads} | Manual Max: {spinbox_max}"
+    threads_info = tk.Label(threads_info_frame, 
+                           text=recommended_text,
+                           font=("Segoe UI", 8), bg="#ffffff", fg="#7f8c8d")
+    threads_info.pack(anchor="w")
+    
+    # Warning for high thread counts
+    threads_warning_frame = tk.Frame(scan_section, bg="#ffffff")
+    threads_warning_frame.pack(fill="x", pady=(0, 12))
+    threads_warning = tk.Label(threads_warning_frame, 
+                              text=f"⚠️ Values >1000 may consume significant system resources.",
+                              font=("Segoe UI", 8, "italic"), bg="#ffffff", fg="#e67e22", wraplength=450)
+    threads_warning.pack(anchor="w")
 
     # Max CIDR hosts
     cidr_frame = tk.Frame(scan_section, bg="#ffffff")
@@ -924,11 +1016,37 @@ def open_settings_window(root, config):
                 messagebox.showerror("Invalid Input", "Max CIDR hosts must be at least 1.")
                 return
 
-            # Validate max concurrent threads
+            # Validate max concurrent threads with dynamic limit and warnings
             max_threads = int(threads_spin.get())
-            if max_threads < 1 or max_threads > 100:
-                messagebox.showerror("Invalid Input", "Max concurrent threads must be between 1 and 100.")
+            max_system_threads = get_max_threads_limit()
+            spinbox_max = max(max_system_threads, 2000)  # Manual override limit
+            
+            if max_threads < 1 or max_threads > spinbox_max:
+                messagebox.showerror("Invalid Input", 
+                                   f"Max concurrent threads must be between 1 and {spinbox_max}.\n\n"
+                                   f"System calculated limit: {max_system_threads}\n"
+                                   f"Manual override limit: {spinbox_max}")
                 return
+            
+            # Warn for very high thread counts but allow them (now 1000+ instead of 200+)
+            if max_threads > 1000:
+                warning_message = (
+                    f"You've set {max_threads} threads, which is above the recommended limit of 1000.\n\n"
+                    f"Very high thread counts can:\n"
+                    f"• Consume significant system memory (1-8MB per thread)\n"
+                    f"• Trigger rate limiting on target networks\n"
+                    f"• Overwhelm target systems\n"
+                    f"• Be detected as aggressive scanning\n\n"
+                    f"This setting is intended for:\n"
+                    f"• Internal network scanning\n"
+                    f"• High-performance systems\n"
+                    f"• Controlled environments\n"
+                    f"• Advanced users with specific requirements\n\n"
+                    f"Continue with {max_threads} threads?"
+                )
+                
+                if not messagebox.askyesno("Very High Thread Count Warning", warning_message, icon="warning"):
+                    return
 
             # Validate export directory if export is enabled
             if export_var.get():
@@ -1309,7 +1427,7 @@ def check_ports_threaded_with_export(hosts, ports, results_tree, clear_button, c
     # Use ThreadPoolExecutor with limited workers for better control
     # Active threads: min(config_value, total_tasks) - only this many threads run concurrently
     # Queued tasks: Only 20 tasks queued at a time (batch processing)
-    max_workers = min(current_config.get("max_concurrent_threads", 20), len(scan_tasks))
+    max_workers = min(current_config.get("max_concurrent_threads", get_recommended_threads()), len(scan_tasks))
     
     def trigger_stop_completion():
         """Helper function to trigger completion UI when scan is stopped"""
@@ -1327,9 +1445,15 @@ def check_ports_threaded_with_export(hosts, ports, results_tree, clear_button, c
 
     def run_scan_batch():
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # Submit tasks in small batches for better stop responsiveness
-            # Make batch size dynamic based on max_workers for better progress visibility
-            batch_size = max(10, min(max_workers * 2, 50))  # Between 10-50 based on thread count
+            # Submit tasks in optimized batches for better stop responsiveness
+            # Scale batch size with thread count for high-performance scanning
+            if max_workers <= 50:
+                batch_size = max(20, max_workers * 2)  # Conservative for lower thread counts
+            elif max_workers <= 200:
+                batch_size = max_workers + 50  # Moderate scaling
+            else:
+                batch_size = max_workers + 100  # Aggressive batching for high thread counts
+            
             task_index = 0
             future_to_task = {}
             
@@ -1455,7 +1579,7 @@ def on_check_ports_with_export():
             scan_status = f"Scanning {host_input} ({resolved_ip}) - {len(ports)} ports"
         
         # Add thread count to status for user feedback
-        max_threads = config.get("max_concurrent_threads", 20)
+        max_threads = config.get("max_concurrent_threads", get_recommended_threads())
         scan_status += f" ({max_threads} threads)"
             
         if config.get("randomize_ports", False):
