@@ -1219,7 +1219,7 @@ def run_gui():
     set_window_icon(root)
     root.title("Port Checker Plus")
     root.configure(bg="#f8f8f8")
-    root.geometry("800x700")  # Increased size for better table display
+    root.geometry("1000x640")  # Increased size for better table display
 
     menubar = Menu(root)
     file_menu = Menu(menubar, tearoff=0)
