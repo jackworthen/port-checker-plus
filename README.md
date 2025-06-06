@@ -14,7 +14,8 @@
 - 🖥️ **Single Host Scanning** - Scan individual IP addresses or hostnames
 - 🌐 **CIDR Network Scanning** - Scan entire network ranges (e.g., `192.168.1.0/24`)
 - 🔄 **Multi-Protocol Support** - TCP, UDP, or both simultaneously
-- ⚡ **Concurrent Threading** - Configurable thread count (1-100) for optimal performance
+- ⚡ **High-Performance Threading** - Intelligent system-aware threading (20-2000+ threads)
+- 🧠 **Smart Resource Management** - Automatic optimization based on system capabilities
 - 🎲 **Port Randomization** - Randomize scan order for stealth operations
 - ⏱️ **Variable Delays** - Add random delays between scans to avoid detection
 
@@ -24,6 +25,15 @@
 - 🎨 **Color-coded Results** - Visual distinction between open, closed, and filtered ports
 - 📋 **Sortable Columns** - Click any column header to sort results
 - 🛑 **Responsive Stop Button** - Cancel large scans instantly
+
+### ⚡ **Enhanced Performance**
+- 🚀 **Intelligent Threading** - System calculates optimal thread limits automatically
+- 🎛️ **Tiered Performance Options:**
+  - 📱 **Recommended (20-150)** - Optimal for most users
+  - 🔥 **Safe Max (up to 1000)** - High-performance scanning without warnings
+  - 🚄 **Manual Override (up to 2000+)** - Maximum speed for power users
+- 🖥️ **System-Aware Scaling** - Adapts to your hardware (CPU cores, file descriptors)
+- 📊 **Optimized Batch Processing** - Scales efficiently with thread count
 
 ### 🎯 **Smart Port Profiles**
 Choose from pre-configured port sets for common scenarios:
@@ -47,7 +57,7 @@ Choose from pre-configured port sets for common scenarios:
 - ⏱️ **Timeout Control** - Configurable connection timeouts (0.1-10.0s)
 - 🔄 **DNS Retry Logic** - Automatic hostname resolution retries
 - 🌐 **CIDR Limits** - Safety limits for large network scans
-- 🎛️ **Thread Control** - Fine-tune concurrent scanning threads
+- 🧵 **Intelligent Thread Control** - System-optimized concurrent scanning
 - 👁️ **Filter Options** - Show only open ports option
 
 ---
@@ -83,7 +93,12 @@ python portCheckerPlus.py
    - Select port profile or enter custom ports
    - Click **Check Ports**
 
-3. **Stop Large Scans:**
+3. **High-Performance Scanning:**
+   - Go to **Edit → Settings → General**
+   - Increase **Max Concurrent Threads** (e.g., 500-1000)
+   - Perfect for internal networks and large port ranges
+
+4. **Stop Large Scans:**
    - Click **Stop Scan** button
    - Results collected so far will be displayed
 
@@ -103,7 +118,11 @@ Access via **Edit → Settings** to customize:
 - 🔌 **Protocol Selection** - TCP, UDP, or both
 - ⏱️ **Connection Timeout** - Fine-tune scan speed vs accuracy
 - 🔄 **DNS Retry Count** - Handle unreliable DNS
-- 🧵 **Max Concurrent Threads** - Balance speed and resources
+- 🧵 **Max Concurrent Threads** - **NEW!** Intelligent system-aware threading:
+  - 📱 **Recommended Range** - Automatically calculated for your system
+  - 🔥 **Safe Maximum** - Up to 1000 threads without warnings
+  - 🚄 **Manual Override** - Up to 2000+ threads for extreme performance
+  - 🧠 **System Optimization** - Based on CPU cores and file descriptors
 - 🌐 **Max Hosts per CIDR** - Safety limit for large networks
 - 👁️ **Display Options** - Show only open ports
 
@@ -119,6 +138,34 @@ Access via **Edit → Settings** to customize:
 
 ---
 
+## ⚡ Performance Guide
+
+### 🎯 **Choosing Thread Count**
+
+| Scenario | Recommended Threads | Notes |
+|----------|-------------------|-------|
+| 🏠 **Home Network** | 20-50 | Conservative, good for WiFi |
+| 🏢 **Corporate Network** | 100-300 | Balance speed and stealth |
+| 🔥 **Internal Auditing** | 500-1000 | Maximum speed, no rate limiting |
+| 🚄 **Extreme Performance** | 1000+ | High-end systems, controlled environments |
+
+### 📊 **System Requirements by Thread Count**
+
+| Thread Count | RAM Usage | File Descriptors | Best For |
+|-------------|-----------|------------------|----------|
+| 20-100 | ~20-100MB | ~50-200 | Most users |
+| 100-500 | ~100-500MB | ~200-1000 | Power users |
+| 500-1000 | ~500MB-1GB | ~1000-2000 | Performance systems |
+| 1000+ | ~1GB+ | ~2000+ | Extreme use cases |
+
+### 🛠️ **Optimization Tips**
+- 🖥️ **For older systems:** Stick to recommended range (20-150 threads)
+- 🚀 **For modern systems:** 500-1000 threads work great for internal networks
+- 🌐 **For external scanning:** Use lower counts (50-200) to avoid rate limiting
+- ⚡ **For maximum speed:** Disable variable delays and use port randomization
+
+---
+
 ## 🔒 Ethical Usage
 
 > ⚠️ **Important:** This tool is designed for legitimate network administration and security testing purposes only.
@@ -128,6 +175,7 @@ Access via **Edit → Settings** to customize:
 - 🔍 Security audits with proper authorization
 - 📚 Educational and learning purposes
 - 🛠️ Network troubleshooting and administration
+- 🚄 High-performance internal network scanning
 
 ### ❌ **Prohibited Activities:**
 - 🚫 Scanning networks without permission
@@ -144,8 +192,18 @@ Access via **Edit → Settings** to customize:
 ### 🏗️ **Architecture**
 - **Language:** Python 3.7+
 - **GUI Framework:** Tkinter
-- **Threading:** ThreadPoolExecutor with configurable workers
+- **Threading:** ThreadPoolExecutor with intelligent resource management
+- **Performance:** System-aware thread optimization and batch processing
 - **Network:** Socket-based scanning with timeout controls
+
+### ⚡ **Threading Engine**
+- 🧠 **Intelligent Limits** - Automatically calculates optimal thread count based on:
+  - 🖥️ CPU core count (20x scaling for I/O-bound tasks)
+  - 📁 File descriptor limits (20% utilization for safety)
+  - 🖱️ Platform optimization (Windows vs Unix handling)
+- 🎛️ **Manual Override** - Allows up to 2000+ threads for extreme performance
+- 📊 **Batch Processing** - Scales batch size with thread count for efficiency
+- 🛑 **Responsive Cancellation** - Immediate stop capability even with high thread counts
 
 ### 📦 **Dependencies**
 - `tkinter` - GUI framework (included with Python)
@@ -153,6 +211,8 @@ Access via **Edit → Settings** to customize:
 - `threading` - Concurrent execution
 - `json` - Configuration management
 - `csv`, `xml` - Export formats
+- `ipaddress` - CIDR network parsing
+- `concurrent.futures` - Advanced thread management
 
 ### 🔧 **Configuration Storage**
 - **Windows:** `%APPDATA%\PortCheckerPlus\config.json`
@@ -173,8 +233,14 @@ We welcome contributions! Here's how you can help:
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feature-name`
 3. Make your changes with clear commit messages
-4. Test thoroughly
+4. Test thoroughly (especially with different thread counts)
 5. Submit a pull request
+
+### 💡 **Feature Ideas**
+- 🚀 Additional performance optimizations
+- 🎨 UI/UX improvements
+- 📊 New export formats
+- 🔒 Enhanced security features
 
 ---
 
