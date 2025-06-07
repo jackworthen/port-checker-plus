@@ -594,7 +594,7 @@ def update_profile_indicator():
         )
 
 def update_advanced_window_appearance():
-    """Update the window title and frame border based on advanced settings"""
+    """Update the window frame border and header based on advanced settings"""
     if hasattr(root, 'title'):
         config = load_config()
         randomize_enabled = config.get("randomize_ports", False)
@@ -602,25 +602,34 @@ def update_advanced_window_appearance():
         fragmented_enabled = config.get("fragmented_packets", False)
         
         if randomize_enabled or delay_enabled or fragmented_enabled:
-            # Build feature list for title
+            # Build feature list for header display
             features = []
             if randomize_enabled:
-                features.append("Random")
+                features.append("Randomize Ports")
             if delay_enabled:
-                features.append("Delay")
+                features.append("Variable Delay")
             if fragmented_enabled:
-                features.append("Fragmented")
-            
-            # Update window title with advanced features
-            advanced_title = f"Port Checker Plus - ADVANCED MODE ({', '.join(features)})"
-            root.title(advanced_title)
+                features.append("Fragmented Packets")
             
             # Add red border effect
             root.configure(highlightbackground="#e74c3c", highlightthickness=3, highlightcolor="#e74c3c")
+            
+            # Show red header frame
+            if hasattr(root, 'advanced_header_frame'):
+                root.advanced_header_frame.pack(fill="x", before=root.input_frame)
+                
+            # Update feature indicator in header (DISABLED)
+            #if hasattr(root, 'feature_indicator'):
+                #feature_text = f"Active: {', '.join(features)}"
+                #root.feature_indicator.config(text=feature_text)
+            
         else:
             # Reset to normal appearance
-            root.title("Port Checker Plus")
             root.configure(highlightbackground="#d0d0d0", highlightthickness=1, highlightcolor="#d0d0d0")
+            
+            # Hide red header frame
+            if hasattr(root, 'advanced_header_frame'):
+                root.advanced_header_frame.pack_forget()
 
 def open_documentation():
     """Open the documentation URL in the default browser"""
@@ -856,7 +865,7 @@ def export_to_xml(file_path, scan_data, scan_results):
     ET.indent(tree, space="  ", level=0)  # Pretty print
     tree.write(file_path, encoding='utf-8', xml_declaration=True)
 
-def open_settings_window(root, config):
+def open_settings_window(root, config, initial_tab="Defaults"):
     # Reload config to get latest saved settings
     config = load_config()
     
@@ -1476,6 +1485,17 @@ def open_settings_window(root, config):
                         command=on_save, bg="#27ae60", fg="white", 
                         activebackground="#229954", relief="flat", padx=20, pady=8)
     save_btn.pack(side="right")
+
+    # Select the initial tab based on parameter
+    tab_mapping = {
+        "Defaults": 0,
+        "General": 1, 
+        "Advanced": 2,
+        "Logging": 3
+    }
+    
+    if initial_tab in tab_mapping:
+        notebook.select(tab_mapping[initial_tab])
 
     # Center the window
     settings_win.update_idletasks()
@@ -2203,7 +2223,7 @@ def run_gui():
     set_window_icon(root)
     root.title("Port Checker Plus")
     root.configure(bg="#f8f8f8")
-    root.geometry("1100x640")  # Increased width for additional column
+    root.geometry("1100x660")  # Increased width for additional column
 
     menubar = Menu(root)
     file_menu = Menu(menubar, tearoff=0)
@@ -2211,14 +2231,43 @@ def run_gui():
     menubar.add_cascade(label="File", menu=file_menu)
 
     edit_menu = Menu(menubar, tearoff=0)
-    edit_menu.add_command(label="🔧 Settings", command=lambda: open_settings_window(root, config))
+    edit_menu.add_command(label="⚙️ Settings", command=lambda: open_settings_window(root, config, "Defaults"))
     menubar.add_cascade(label="Edit", menu=edit_menu)
 
     help_menu = Menu(menubar, tearoff=0)
-    help_menu.add_command(label="📖 Documentation", command=open_documentation)
+    help_menu.add_command(label="❓Documentation", command=open_documentation)
     menubar.add_cascade(label="Help", menu=help_menu)
 
     root.config(menu=menubar)
+
+    # Advanced mode header frame (initially hidden)
+    root.advanced_header_frame = tk.Frame(root, bg="#e74c3c", height=35)
+    # Don't pack initially - will be shown when advanced mode is enabled
+    
+    # Header content
+    header_content = tk.Frame(root.advanced_header_frame, bg="#e74c3c")
+    header_content.pack(fill="both", expand=True, padx=15, pady=8)
+    
+    # Warning icon and text
+    warning_icon = tk.Label(header_content, text="⚠️", bg="#e74c3c", fg="white", 
+                           font=("Segoe UI", 12, "bold"))
+    warning_icon.pack(side="left")
+    
+    warning_text = tk.Label(header_content, text="STEALTH SETTINGS ENABLED", 
+                           bg="#e74c3c", fg="white", font=("Segoe UI", 10, "bold"))
+    warning_text.pack(side="left", padx=(8, 0))
+    
+    # Feature indicator (will be updated dynamically)
+    root.feature_indicator = tk.Label(header_content, text="", bg="#e74c3c", fg="white", 
+                                     font=("Segoe UI", 9))
+    root.feature_indicator.pack(side="left", padx=(15, 0))
+    
+    # Settings button on the right
+    settings_btn = tk.Button(header_content, text="⚙️ Settings", bg="#c0392b", fg="white",
+                            font=("Segoe UI", 9), relief="flat", padx=10, pady=2,
+                            activebackground="#a93226",
+                            command=lambda: open_settings_window(root, config, "Advanced"))
+    settings_btn.pack(side="right")
 
     # Input section
     root.input_frame = tk.Frame(root, bg="#f8f8f8")
