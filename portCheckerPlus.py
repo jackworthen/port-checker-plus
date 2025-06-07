@@ -1827,6 +1827,7 @@ def check_ports_threaded_with_export(hosts, ports, results_tree, clear_button, c
             # Update progress bar and status
             progress = (counter["count"] / total_scans) * 100
             root.progress_var.set(progress)
+            root.progress_percentage.config(text=f"{progress:.0f}%")
             
             if stop_scan_event.is_set():
                 root.status_label.config(text=f"Scan stopped - {counter['count']} of {total_scans} scans completed")
@@ -1871,7 +1872,7 @@ def check_ports_threaded_with_export(hosts, ports, results_tree, clear_button, c
                 root.after(0, update_completion_ui)
                 
                 # Reset progress bar after completion
-                root.after(3000, lambda: (root.progress_var.set(0), root.status_label.config(text="Ready")))
+                root.after(3000, lambda: (root.progress_var.set(0), root.progress_percentage.config(text="0%"), root.status_label.config(text="Ready")))
 
     def run_tcp_scan(h, p):
         if stop_scan_event.is_set():
@@ -2047,6 +2048,7 @@ def on_check_ports_with_export():
         
         # Initialize progress bar and show scanning status
         root.progress_var.set(0)
+        root.progress_percentage.config(text="0%")
         if is_cidr:
             scan_status = f"Scanning {host_input} ({len(hosts)} hosts) - {len(ports)} ports"
         else:
@@ -2119,6 +2121,7 @@ def clear_results_tree():
     root.clear_button.config(state=tk.DISABLED)
     # Reset progress bar and status when clearing
     root.progress_var.set(0)
+    root.progress_percentage.config(text="0%")
     root.status_label.config(text="Ready")
     # Reset UI state
     root.check_button.config(state=tk.NORMAL)
@@ -2409,10 +2412,18 @@ def run_gui():
     root.status_label = tk.Label(root.progress_frame, text="Ready", bg="#f8f8f8", font=("Segoe UI", 9))
     root.status_label.pack(side="left")
     
+    # Progress bar container (for progress bar + percentage)
+    progress_container = tk.Frame(root.progress_frame, bg="#f8f8f8")
+    progress_container.pack(side="right", padx=(10, 0))
+    
     # Progress bar
     root.progress_var = tk.DoubleVar()
-    root.progress_bar = ttk.Progressbar(root.progress_frame, variable=root.progress_var, maximum=100, length=200)
-    root.progress_bar.pack(side="right", padx=(10, 0))
+    root.progress_bar = ttk.Progressbar(progress_container, variable=root.progress_var, maximum=100, length=200)
+    root.progress_bar.pack(side="left")
+    
+    # Percentage label
+    root.progress_percentage = tk.Label(progress_container, text="0%", bg="#f8f8f8", font=("Segoe UI", 9, "bold"), fg="#2c3e50", width=4)
+    root.progress_percentage.pack(side="left", padx=(8, 0))
 
     # Initialize the profile indicator and advanced window appearance
     update_profile_indicator()
