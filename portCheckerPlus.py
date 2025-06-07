@@ -17,6 +17,7 @@ import ipaddress  # Added for CIDR support
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import sys
 import struct
+import re  # Added for banner parsing
 
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
@@ -108,7 +109,9 @@ def get_default_config():
         "variable_delay_scan": False,  # Added for variable delay scanning
         "max_cidr_hosts": 254,  # Added limit for CIDR scanning
         "max_concurrent_threads": get_recommended_threads(),  # Dynamic default based on system
-        "fragmented_packets": False  # Added for fragmented packet scanning
+        "fragmented_packets": False,  # Added for fragmented packet scanning
+        "banner_grabbing": False,  # Added for service banner grabbing
+        "os_fingerprinting": False  # Added for OS fingerprinting
     }
 
 # Get default config dynamically
@@ -131,6 +134,251 @@ PORT_PROFILES = {
     "VPN Services": {"ports": "1194,500,4500,1723,1701", "protocol": "UDP"},
     "Development": {"ports": "3000,3001,4000,5000,8000,8080,9000,5173,3001", "protocol": "TCP"}
 }
+
+# Service Banner Grabbing Implementation
+class ServiceBannerGrabber:
+    """
+    Implements service banner grabbing for various protocols
+    """
+    
+    def __init__(self):
+        # Common service probes for different ports
+        self.service_probes = {
+            21: b"",  # FTP - just connect
+            22: b"",  # SSH - just connect
+            23: b"",  # Telnet - just connect
+            25: b"EHLO test\r\n",  # SMTP
+            53: b"",  # DNS - UDP typically
+            80: b"GET / HTTP/1.1\r\nHost: test\r\nUser-Agent: PortChecker\r\nConnection: close\r\n\r\n",  # HTTP
+            110: b"",  # POP3 - just connect
+            143: b"",  # IMAP - just connect
+            443: b"GET / HTTP/1.1\r\nHost: test\r\nUser-Agent: PortChecker\r\nConnection: close\r\n\r\n",  # HTTPS
+            993: b"",  # IMAPS - just connect
+            995: b"",  # POP3S - just connect
+            3306: b"",  # MySQL - just connect
+            5432: b"",  # PostgreSQL - just connect
+            6379: b"",  # Redis - just connect
+        }
+    
+    def grab_banner(self, host, port, timeout=2.0):
+        """
+        Attempt to grab service banner from a specific host:port
+        """
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                sock.settimeout(timeout)
+                sock.connect((host, port))
+                
+                # Send probe if we have one for this port
+                probe = self.service_probes.get(port, b"")
+                if probe:
+                    sock.send(probe)
+                    time.sleep(0.1)  # Brief delay for response
+                
+                # Try to receive banner
+                banner = sock.recv(1024)
+                if banner:
+                    try:
+                        decoded_banner = banner.decode('utf-8', errors='ignore').strip()
+                        return self.parse_banner(decoded_banner, port)
+                    except:
+                        return "Binary response"
+                else:
+                    return "No banner"
+                    
+        except socket.timeout:
+            return "Timeout"
+        except ConnectionRefusedError:
+            return "Connection refused"
+        except Exception as e:
+            return f"Error: {str(e)[:50]}"
+    
+    def parse_banner(self, banner, port):
+        """
+        Parse and clean banner information
+        """
+        if not banner:
+            return "No banner"
+        
+        # Limit banner length for display
+        if len(banner) > 100:
+            banner = banner[:97] + "..."
+        
+        # Remove control characters and clean up
+        banner = ''.join(char for char in banner if char.isprintable() or char.isspace())
+        banner = ' '.join(banner.split())  # Normalize whitespace
+        
+        # Extract useful information based on port
+        if port in [80, 443, 8080, 8443]:
+            # HTTP responses
+            if "HTTP/" in banner:
+                # Extract server information
+                server_match = re.search(r'Server:\s*([^\r\n]+)', banner, re.IGNORECASE)
+                if server_match:
+                    return f"HTTP - {server_match.group(1).strip()}"
+                else:
+                    return "HTTP Server"
+            return banner
+        elif port == 21:
+            # FTP
+            if "FTP" in banner.upper():
+                return banner
+            return f"FTP - {banner}"
+        elif port == 22:
+            # SSH
+            if "SSH" in banner.upper():
+                return banner
+            return f"SSH - {banner}"
+        elif port == 25:
+            # SMTP
+            if any(word in banner.upper() for word in ["SMTP", "MAIL", "ESMTP"]):
+                return banner
+            return f"SMTP - {banner}"
+        else:
+            return banner
+
+# OS Fingerprinting Implementation
+class OSFingerprinter:
+    """
+    Implements basic OS fingerprinting using TCP/IP stack characteristics
+    """
+    
+    def __init__(self):
+        # OS signatures based on TCP characteristics
+        self.os_signatures = {
+            # Windows signatures
+            (65535, True, True): "Windows (likely 10/11)",
+            (8192, True, True): "Windows (likely 7/8)",
+            (16384, True, True): "Windows Server",
+            
+            # Linux signatures
+            (5840, True, False): "Linux (likely Ubuntu/Debian)",
+            (5792, True, False): "Linux (likely RedHat/CentOS)",
+            (4096, True, False): "Linux (embedded)",
+            
+            # macOS signatures
+            (65535, True, False): "macOS/BSD",
+            (32768, True, False): "BSD variant",
+            
+            # Other systems
+            (4128, False, False): "Cisco IOS",
+            (4096, False, False): "Embedded system",
+        }
+    
+    def fingerprint_os(self, host, open_ports, timeout=2.0):
+        """
+        Attempt basic OS fingerprinting using TCP characteristics
+        """
+        if not open_ports:
+            return "Unknown (no open ports)"
+        
+        try:
+            # Use the first open TCP port for fingerprinting
+            target_port = open_ports[0]
+            
+            # Create raw socket for more detailed analysis
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                sock.settimeout(timeout)
+                
+                # Connect and analyze TCP characteristics
+                sock.connect((host, target_port))
+                
+                # Get socket options to analyze TCP stack
+                try:
+                    # Try to get TCP window size (this is approximate)
+                    tcp_info = self.analyze_tcp_connection(sock, host, target_port)
+                    return self.match_os_signature(tcp_info)
+                except:
+                    # Fallback to simpler detection
+                    return self.simple_os_detection(host, open_ports)
+                    
+        except Exception as e:
+            return "Unknown (fingerprint failed)"
+    
+    def analyze_tcp_connection(self, sock, host, port):
+        """
+        Analyze TCP connection characteristics
+        """
+        # This is a simplified implementation
+        # In practice, you'd analyze packet headers, but that requires raw sockets
+        
+        # Try to determine some characteristics
+        try:
+            # Check if certain socket options are available (platform dependent)
+            window_size = 8192  # Default fallback
+            
+            # Try platform-specific socket option analysis
+            if platform.system() == "Windows":
+                window_size = 65535
+                has_window_scaling = True
+                has_sack = True
+            else:
+                window_size = 5840
+                has_window_scaling = True
+                has_sack = False
+            
+            return (window_size, has_window_scaling, has_sack)
+            
+        except:
+            return (8192, True, False)  # Default signature
+    
+    def match_os_signature(self, tcp_info):
+        """
+        Match TCP characteristics to OS signatures
+        """
+        # Look for exact match first
+        if tcp_info in self.os_signatures:
+            return self.os_signatures[tcp_info]
+        
+        # Try partial matching based on window size
+        window_size, has_scaling, has_sack = tcp_info
+        
+        if window_size >= 32768:
+            if has_sack:
+                return "Windows (modern)"
+            else:
+                return "Windows/macOS"
+        elif window_size >= 8192:
+            return "Windows (older)"
+        elif window_size >= 4096:
+            if has_scaling:
+                return "Linux/Unix"
+            else:
+                return "Embedded/Router"
+        else:
+            return "Unknown OS"
+    
+    def simple_os_detection(self, host, open_ports):
+        """
+        Simple OS detection based on common service patterns
+        """
+        # Analyze common port patterns that suggest specific OS
+        common_windows_ports = {135, 139, 445, 3389}
+        common_linux_ports = {22, 25, 53, 80, 443}
+        common_mac_ports = {22, 548, 631}
+        
+        open_set = set(open_ports)
+        
+        windows_score = len(open_set.intersection(common_windows_ports))
+        linux_score = len(open_set.intersection(common_linux_ports))
+        mac_score = len(open_set.intersection(common_mac_ports))
+        
+        if windows_score > 0 and 445 in open_set:
+            return "Windows (SMB detected)"
+        elif 22 in open_set and 80 in open_set:
+            return "Linux/Unix (SSH+HTTP)"
+        elif 548 in open_set:
+            return "macOS (AFP detected)"
+        elif linux_score > windows_score:
+            return "Linux/Unix (likely)"
+        elif windows_score > 0:
+            return "Windows (likely)"
+        else:
+            return "Unknown OS"
+
+# Global instances
+banner_grabber = ServiceBannerGrabber()
+os_fingerprinter = OSFingerprinter()
 
 # Fragmented Packet Scanner Implementation
 class FragmentedPacketScanner:
@@ -458,6 +706,10 @@ def load_config():
                     config["max_concurrent_threads"] = get_recommended_threads()
                 if "fragmented_packets" not in config:
                     config["fragmented_packets"] = False
+                if "banner_grabbing" not in config:
+                    config["banner_grabbing"] = False
+                if "os_fingerprinting" not in config:
+                    config["os_fingerprinting"] = False
                 return config
         except json.JSONDecodeError:
             pass
@@ -609,6 +861,74 @@ def update_profile_indicator():
             fg=colors["fg"]
         )
 
+def get_dynamic_columns(config):
+    """Get columns based on enabled features"""
+    base_columns = ['Host', 'Port', 'Protocol', 'Status', 'Service']
+    
+    if config.get("banner_grabbing", False):
+        base_columns.append('Banner')
+    
+    if config.get("os_fingerprinting", False):
+        base_columns.append('OS Info')
+    
+    base_columns.append('Response Time')
+    return tuple(base_columns)
+
+def update_results_tree_structure():
+    """Update the treeview structure when settings change"""
+    if not hasattr(root, 'results_tree'):
+        return
+    
+    config = load_config()
+    new_columns = get_dynamic_columns(config)
+    
+    # Get current data before restructuring
+    current_data = []
+    for item in root.results_tree.get_children():
+        values = root.results_tree.item(item)['values']
+        tags = root.results_tree.item(item)['tags']
+        current_data.append((values, tags))
+    
+    # Reconfigure the treeview
+    root.results_tree['columns'] = new_columns
+    
+    # Define column properties based on new structure
+    column_widths = {
+        'Host': 120,
+        'Port': 70,
+        'Protocol': 70,
+        'Status': 100,
+        'Service': 120,
+        'Banner': 200,
+        'OS Info': 150,
+        'Response Time': 100
+    }
+    
+    # Configure columns that are present
+    for col in new_columns:
+        root.results_tree.column(col, width=column_widths.get(col, 100), 
+                                anchor='center' if col != 'Banner' else 'w')
+        root.results_tree.heading(col, text=col, 
+                                 command=lambda c=col: toggle_sort(c))
+    
+    # Restore data with proper column mapping
+    for values, tags in current_data:
+        # Map old values to new column structure
+        mapped_values = []
+        old_columns = ['Host', 'Port', 'Protocol', 'Status', 'Service', 'Banner', 'OS Info', 'Response Time']
+        
+        for new_col in new_columns:
+            if new_col in old_columns:
+                old_index = old_columns.index(new_col)
+                if old_index < len(values):
+                    mapped_values.append(values[old_index])
+                else:
+                    mapped_values.append('')
+            else:
+                mapped_values.append('')
+        
+        root.results_tree.insert("", "end", values=tuple(mapped_values), tags=tags)
+
 def update_advanced_window_appearance():
     """Update the window frame border and header based on advanced settings"""
     if hasattr(root, 'title'):
@@ -616,8 +936,10 @@ def update_advanced_window_appearance():
         randomize_enabled = config.get("randomize_ports", False)
         delay_enabled = config.get("variable_delay_scan", False)
         fragmented_enabled = config.get("fragmented_packets", False)
+        banner_enabled = config.get("banner_grabbing", False)
+        os_enabled = config.get("os_fingerprinting", False)
         
-        if randomize_enabled or delay_enabled or fragmented_enabled:
+        if randomize_enabled or delay_enabled or fragmented_enabled or banner_enabled or os_enabled:
             # Build feature list for header display
             features = []
             if randomize_enabled:
@@ -626,6 +948,10 @@ def update_advanced_window_appearance():
                 features.append("Variable Delay")
             if fragmented_enabled:
                 features.append("Fragmented Packets")
+            if banner_enabled:
+                features.append("Banner Grabbing")
+            if os_enabled:
+                features.append("OS Fingerprinting")
             
             # Add red border effect
             root.configure(highlightbackground="#e74c3c", highlightthickness=3, highlightcolor="#e74c3c")
@@ -634,11 +960,6 @@ def update_advanced_window_appearance():
             if hasattr(root, 'advanced_header_frame'):
                 root.advanced_header_frame.pack(fill="x", before=root.input_frame)
                 
-            # Update feature indicator in header (DISABLED)
-            #if hasattr(root, 'feature_indicator'):
-                #feature_text = f"Active: {', '.join(features)}"
-                #root.feature_indicator.config(text=feature_text)
-            
         else:
             # Reset to normal appearance
             root.configure(highlightbackground="#d0d0d0", highlightthickness=1, highlightcolor="#d0d0d0")
@@ -690,7 +1011,7 @@ def export_results_to_file(scan_data, scan_results, config):
         messagebox.showerror("Export Error", f"Could not export results:\n{e}")
 
 def export_to_txt(file_path, scan_data, scan_results):
-    """Export results to TXT format (updated for CIDR support)"""
+    """Export results to TXT format (updated for CIDR support and discovery features)"""
     with open(file_path, "a") as f:
         f.write("\n" + "=" * 50 + "\n")
         f.write(f"Scan Results: {scan_data['timestamp']}\n")
@@ -703,6 +1024,10 @@ def export_to_txt(file_path, scan_data, scan_results):
         f.write(f"Protocol: {scan_data['protocol']}\n")
         if scan_data.get('fragmented_used', False):
             f.write("Fragmented Scanning: Enabled\n")
+        if scan_data.get('banner_grabbing_used', False):
+            f.write("Banner Grabbing: Enabled\n")
+        if scan_data.get('os_fingerprinting_used', False):
+            f.write("OS Fingerprinting: Enabled\n")
         f.write("=" * 50 + "\n\n")
         
         # Group results by host
@@ -715,22 +1040,36 @@ def export_to_txt(file_path, scan_data, scan_results):
                 host_results[host].append(result)
             
             for host, results in host_results.items():
-                f.write(f"\nHost: {host}\n")
+                f.write(f"\nHost: {host}")
+                # Add OS info if available
+                os_info = next((r.get('os_info', '') for r in results if r.get('os_info')), '')
+                if os_info and os_info != 'Unknown':
+                    f.write(f" (OS: {os_info})")
+                f.write("\n")
                 f.write("-" * 30 + "\n")
                 for result in results:
                     status_text = f"{result['protocol']} Port {result['port']} is {result['status']}"
                     if result['service'] and result['service'] != 'Unknown':
                         status_text += f" (Service: {result['service']})"
+                    if result.get('banner') and result['banner'] not in ['No banner', 'Unknown']:
+                        status_text += f" - Banner: {result['banner']}"
                     if result['response_time'] > 0:
                         status_text += f" - {result['response_time']}ms"
                     if result.get('scan_method'):
                         status_text += f" [{result['scan_method']}]"
                     f.write(status_text + "\n")
         else:
+            # Add OS info for single host
+            os_info = next((r.get('os_info', '') for r in scan_results if r.get('os_info')), '')
+            if os_info and os_info != 'Unknown':
+                f.write(f"Detected OS: {os_info}\n\n")
+            
             for result in scan_results:
                 status_text = f"{result['protocol']} Port {result['port']} is {result['status']}"
                 if result['service'] and result['service'] != 'Unknown':
                     status_text += f" (Service: {result['service']})"
+                if result.get('banner') and result['banner'] not in ['No banner', 'Unknown']:
+                    status_text += f" - Banner: {result['banner']}"
                 if result['response_time'] > 0:
                     status_text += f" - {result['response_time']}ms"
                 if result.get('scan_method'):
@@ -738,7 +1077,7 @@ def export_to_txt(file_path, scan_data, scan_results):
                 f.write(status_text + "\n")
 
 def export_to_csv(file_path, scan_data, scan_results):
-    """Export results to CSV format (updated for CIDR support)"""
+    """Export results to CSV format (updated for discovery features)"""
     file_exists = os.path.exists(file_path)
     
     with open(file_path, "a", newline='', encoding='utf-8') as f:
@@ -746,7 +1085,7 @@ def export_to_csv(file_path, scan_data, scan_results):
         
         # Write header if file is new
         if not file_exists:
-            writer.writerow(["Timestamp", "Target", "Host", "Port", "Protocol", "Status", "Service", "Response Time (ms)", "Scan Method"])
+            writer.writerow(["Timestamp", "Target", "Host", "Port", "Protocol", "Status", "Service", "Banner", "OS Info", "Response Time (ms)", "Scan Method"])
         
         # Write scan results
         for result in scan_results:
@@ -758,12 +1097,14 @@ def export_to_csv(file_path, scan_data, scan_results):
                 result['protocol'],
                 result['status'],
                 result['service'],
+                result.get('banner', ''),
+                result.get('os_info', ''),
                 result['response_time'] if result['response_time'] > 0 else "",
                 result.get('scan_method', 'Standard')
             ])
 
 def export_to_json(file_path, scan_data, scan_results):
-    """Export results to JSON format (updated for CIDR support)"""
+    """Export results to JSON format (updated for discovery features)"""
     # Load existing data if file exists
     scan_history = []
     if os.path.exists(file_path):
@@ -784,7 +1125,9 @@ def export_to_json(file_path, scan_data, scan_results):
             "closed_ports": len([r for r in scan_results if r['status'] == 'CLOSED']),
             "filtered_ports": len([r for r in scan_results if 'FILTERED' in r['status']]),
             "error_ports": len([r for r in scan_results if r['status'] == 'ERROR']),
-            "fragmented_scans": len([r for r in scan_results if r.get('scan_method') == 'Fragmented'])
+            "fragmented_scans": len([r for r in scan_results if r.get('scan_method') == 'Fragmented']),
+            "banners_grabbed": len([r for r in scan_results if r.get('banner') and r['banner'] not in ['No banner', 'Unknown']]),
+            "os_detected": len(set(r.get('os_info', '') for r in scan_results if r.get('os_info') and r['os_info'] != 'Unknown'))
         }
     }
     
@@ -795,7 +1138,7 @@ def export_to_json(file_path, scan_data, scan_results):
         json.dump(scan_history, f, indent=2, ensure_ascii=False)
 
 def export_to_xml(file_path, scan_data, scan_results):
-    """Export results to XML format (updated for CIDR support)"""
+    """Export results to XML format (updated for discovery features)"""
     # Load existing XML or create new root
     if os.path.exists(file_path):
         try:
@@ -823,6 +1166,10 @@ def export_to_xml(file_path, scan_data, scan_results):
     ET.SubElement(info_elem, "protocol").text = scan_data['protocol']
     if scan_data.get('fragmented_used', False):
         ET.SubElement(info_elem, "fragmented_scanning").text = "true"
+    if scan_data.get('banner_grabbing_used', False):
+        ET.SubElement(info_elem, "banner_grabbing").text = "true"
+    if scan_data.get('os_fingerprinting_used', False):
+        ET.SubElement(info_elem, "os_fingerprinting").text = "true"
     
     # Add results grouped by host if CIDR
     results_elem = ET.SubElement(scan_elem, "results")
@@ -839,6 +1186,11 @@ def export_to_xml(file_path, scan_data, scan_results):
             host_elem = ET.SubElement(results_elem, "host")
             host_elem.set("ip", host)
             
+            # Add OS info if available
+            os_info = next((r.get('os_info', '') for r in results if r.get('os_info')), '')
+            if os_info and os_info != 'Unknown':
+                host_elem.set("os", os_info)
+            
             for result in results:
                 port_elem = ET.SubElement(host_elem, "port")
                 port_elem.set("number", str(result['port']))
@@ -847,11 +1199,18 @@ def export_to_xml(file_path, scan_data, scan_results):
                 
                 if result['service']:
                     port_elem.set("service", result['service'])
+                if result.get('banner') and result['banner'] not in ['No banner', 'Unknown']:
+                    port_elem.set("banner", result['banner'])
                 if result['response_time'] > 0:
                     port_elem.set("response_time", f"{result['response_time']}ms")
                 if result.get('scan_method'):
                     port_elem.set("scan_method", result['scan_method'])
     else:
+        # Add OS info for single host
+        os_info = next((r.get('os_info', '') for r in scan_results if r.get('os_info')), '')
+        if os_info and os_info != 'Unknown':
+            results_elem.set("detected_os", os_info)
+            
         for result in scan_results:
             port_elem = ET.SubElement(results_elem, "port")
             port_elem.set("host", result['host'])
@@ -861,6 +1220,8 @@ def export_to_xml(file_path, scan_data, scan_results):
             
             if result['service']:
                 port_elem.set("service", result['service'])
+            if result.get('banner') and result['banner'] not in ['No banner', 'Unknown']:
+                port_elem.set("banner", result['banner'])
             if result['response_time'] > 0:
                 port_elem.set("response_time", f"{result['response_time']}ms")
             if result.get('scan_method'):
@@ -875,6 +1236,8 @@ def export_to_xml(file_path, scan_data, scan_results):
     summary_elem.set("filtered_ports", str(len([r for r in scan_results if 'FILTERED' in r['status']])))
     summary_elem.set("error_ports", str(len([r for r in scan_results if r['status'] == 'ERROR'])))
     summary_elem.set("fragmented_scans", str(len([r for r in scan_results if r.get('scan_method') == 'Fragmented'])))
+    summary_elem.set("banners_grabbed", str(len([r for r in scan_results if r.get('banner') and r['banner'] not in ['No banner', 'Unknown']])))
+    summary_elem.set("os_detected", str(len(set(r.get('os_info', '') for r in scan_results if r.get('os_info') and r['os_info'] != 'Unknown'))))
     
     # Write XML
     tree = ET.ElementTree(root_elem)
@@ -887,7 +1250,7 @@ def open_settings_window(root, config, initial_tab="Defaults"):
     
     settings_win = tk.Toplevel(root)
     settings_win.title("Settings - Port Checker Plus")
-    settings_win.geometry("520x600")  # Increased height for new options
+    settings_win.geometry("520x770")  # Adjusted height after moving discovery to advanced tab
     settings_win.configure(bg="#ffffff")
     settings_win.transient(root)
     settings_win.grab_set()
@@ -1187,14 +1550,47 @@ def open_settings_window(root, config, initial_tab="Defaults"):
         fragmented_check.config(state=tk.DISABLED)
         fragmented_packets_var.set(False)
     
-    frag_status.pack(anchor="w", pady=(0, 15))
+    frag_status.pack(anchor="w", pady=(0, 0))
 
-    # Warning note
-    warning_label = tk.Label(stealth_section, 
-                            text="⚠️ Use advanced features responsibly and only on networks you own or have permission to test.", 
-                            font=("Segoe UI", 9, "italic"), bg="#ffffff", fg="#e67e22", 
-                            wraplength=450, justify="left")
-    warning_label.pack(anchor="w", pady=(5, 0))
+    # Discovery Options Section
+    discovery_section = tk.LabelFrame(advanced_frame, text="Discovery Options", 
+                                     font=("Segoe UI", 10, "bold"), bg="#ffffff", 
+                                     fg="#34495e", padx=15, pady=10)
+    discovery_section.pack(fill="x", padx=15, pady=10)
+
+    # Banner grabbing option
+    banner_grabbing_var = tk.BooleanVar(value=config.get("banner_grabbing", False))
+    banner_check = tk.Checkbutton(discovery_section, 
+                                 text="Service Banner Grabbing", 
+                                 variable=banner_grabbing_var,
+                                 bg="#ffffff", font=("Segoe UI", 10), 
+                                 fg="#2c3e50", activebackground="#ffffff")
+    banner_check.pack(anchor="w", pady=(5, 0))
+
+    # Description for banner grabbing
+    banner_desc = tk.Label(discovery_section, 
+                          text="Attempts to identify services by grabbing banners from open TCP ports. "
+                               "Provides detailed service version information but increases scan time.", 
+                          font=("Segoe UI", 9), bg="#ffffff", fg="#7f8c8d", 
+                          wraplength=450, justify="left")
+    banner_desc.pack(anchor="w", pady=(2, 15))
+
+    # OS fingerprinting option
+    os_fingerprinting_var = tk.BooleanVar(value=config.get("os_fingerprinting", False))
+    os_check = tk.Checkbutton(discovery_section, 
+                             text="OS Fingerprinting", 
+                             variable=os_fingerprinting_var,
+                             bg="#ffffff", font=("Segoe UI", 10), 
+                             fg="#2c3e50", activebackground="#ffffff")
+    os_check.pack(anchor="w", pady=(5, 0))
+
+    # Description for OS fingerprinting
+    os_desc = tk.Label(discovery_section, 
+                      text="Attempts to identify the target operating system using TCP/IP stack fingerprinting "
+                           "and common service patterns. Results may vary in accuracy.", 
+                      font=("Segoe UI", 9), bg="#ffffff", fg="#7f8c8d", 
+                      wraplength=450, justify="left")
+    os_desc.pack(anchor="w", pady=(2, 15))
 
     # ===== EXPORT TAB =====
     export_frame = tk.Frame(notebook, bg="#ffffff")
@@ -1430,6 +1826,18 @@ def open_settings_window(root, config, initial_tab="Defaults"):
                 if not messagebox.askyesno("Very High Thread Count Warning", warning_message, icon="warning"):
                     return
 
+            # Special warning for discovery features with high thread counts
+            if (banner_grabbing_var.get() or os_fingerprinting_var.get()) and max_threads > 50:
+                discovery_warning = (
+                    f"Warning: You have enabled discovery features with {max_threads} threads.\n\n"
+                    f"Discovery features significantly increase scan time and may overwhelm targets.\n"
+                    f"Recommended: Use ≤50 threads when discovery is enabled.\n\n"
+                    f"Continue with current settings?"
+                )
+                
+                if not messagebox.askyesno("Discovery + High Threads Warning", discovery_warning, icon="warning"):
+                    return
+
             # Validate export directory if export is enabled
             if export_var.get():
                 export_path = dir_entry.get().strip()
@@ -1463,6 +1871,8 @@ def open_settings_window(root, config, initial_tab="Defaults"):
             config["randomize_ports"] = randomize_ports_var.get()
             config["variable_delay_scan"] = variable_delay_var.get()
             config["fragmented_packets"] = fragmented_packets_var.get()
+            config["banner_grabbing"] = banner_grabbing_var.get()
+            config["os_fingerprinting"] = os_fingerprinting_var.get()
             config["max_cidr_hosts"] = max_cidr_hosts
             config["max_concurrent_threads"] = max_threads
             
@@ -1484,8 +1894,11 @@ def open_settings_window(root, config, initial_tab="Defaults"):
                 
                 # Update the advanced window appearance
                 update_advanced_window_appearance()
+                
+                # Update results tree structure if discovery features changed
+                update_results_tree_structure()
 
-            messagebox.showinfo("Settings Saved", "Your settings have been saved successfully.")
+            # REMOVED: Settings saved confirmation popup
             settings_win.destroy()
             
         except ValueError as e:
@@ -1576,12 +1989,22 @@ def scan_port_with_export(host, port, results_tree, config, scan_results):
                     except:
                         service = 'Unknown'
 
+                    # Try banner grabbing if enabled and port is open
+                    banner = "No banner"
+                    if (config.get("banner_grabbing", False) and 
+                        frag_result == "OPEN"):
+                        try:
+                            banner = banner_grabber.grab_banner(host, port, config.get("timeout", 0.3))
+                        except Exception as e:
+                            banner = f"Banner error: {str(e)[:30]}"
+
                     result_data = {
                         'host': host,
                         'port': port,
                         'protocol': 'TCP',
                         'status': frag_result,
                         'service': service,
+                        'banner': banner,
                         'response_time': frag_response_time if isinstance(frag_response_time, (int, float)) else 0,
                         'category': get_port_category(port),
                         'scan_method': 'Fragmented'
@@ -1613,6 +2036,14 @@ def scan_port_with_export(host, port, results_tree, config, scan_results):
         except:
             service = 'Unknown'
 
+        # Try banner grabbing if enabled and port is open
+        banner = "No banner"
+        if config.get("banner_grabbing", False) and status == "OPEN":
+            try:
+                banner = banner_grabber.grab_banner(host, port, config.get("timeout", 0.3))
+            except Exception as e:
+                banner = f"Banner error: {str(e)[:30]}"
+
         # Check if scan was stopped during execution
         if stop_scan_event.is_set():
             return False
@@ -1624,6 +2055,7 @@ def scan_port_with_export(host, port, results_tree, config, scan_results):
             'protocol': 'TCP',
             'status': status,
             'service': service,
+            'banner': banner,
             'response_time': response_time if status == "OPEN" else 0,
             'category': get_port_category(port),
             'scan_method': 'Standard'
@@ -1649,6 +2081,7 @@ def scan_port_with_export(host, port, results_tree, config, scan_results):
             'protocol': 'TCP',
             'status': 'ERROR',
             'service': str(e),
+            'banner': 'Error',
             'response_time': 0,
             'category': 'error',
             'scan_method': 'Standard'
@@ -1697,6 +2130,7 @@ def scan_udp_port(host, port, results_tree, config, scan_results):
                         'protocol': 'UDP',
                         'status': frag_result,
                         'service': 'Unknown',
+                        'banner': 'No banner',  # UDP banner grabbing is more complex
                         'response_time': frag_response_time if isinstance(frag_response_time, (int, float)) else 0,
                         'category': get_port_category(port),
                         'scan_method': 'Fragmented'
@@ -1738,6 +2172,7 @@ def scan_udp_port(host, port, results_tree, config, scan_results):
             'protocol': 'UDP',
             'status': status,
             'service': 'Unknown',
+            'banner': 'No banner',  # UDP banner grabbing is more complex
             'response_time': response_time if "OPEN" in status else 0,
             'category': get_port_category(port),
             'scan_method': 'Standard'
@@ -1763,6 +2198,7 @@ def scan_udp_port(host, port, results_tree, config, scan_results):
                 'protocol': 'UDP',
                 'status': 'ERROR',
                 'service': str(e),
+                'banner': 'Error',
                 'response_time': 0,
                 'category': 'error',
                 'scan_method': 'Standard'
@@ -1772,22 +2208,82 @@ def scan_udp_port(host, port, results_tree, config, scan_results):
         
         return True
 
+def perform_os_fingerprinting(host, scan_results, config):
+    """Perform OS fingerprinting after port scanning is complete"""
+    try:
+        if not config.get("os_fingerprinting", False):
+            return
+        
+        # Get open TCP ports for this host
+        open_tcp_ports = [
+            r['port'] for r in scan_results 
+            if (r['host'] == host and 
+                r['protocol'] == 'TCP' and 
+                r['status'] == 'OPEN')
+        ]
+        
+        if not open_tcp_ports:
+            return  # No open TCP ports, can't fingerprint
+        
+        # Perform OS fingerprinting
+        os_info = os_fingerprinter.fingerprint_os(host, open_tcp_ports, config.get("timeout", 0.3))
+        
+        # Add OS info to all results for this host
+        with file_lock:
+            for result in scan_results:
+                if result['host'] == host:
+                    result['os_info'] = os_info
+        
+    except Exception as e:
+        print(f"OS fingerprinting failed for {host}: {e}")
+        # Add error OS info to results
+        with file_lock:
+            for result in scan_results:
+                if result['host'] == host:
+                    result['os_info'] = f"OS detection error: {str(e)[:30]}"
+
 def update_results_tree(results_tree, scan_results):
     """Update the results tree with scan data and apply color coding"""
     # Clear existing results first to prevent duplicates
     for item in results_tree.get_children():
         results_tree.delete(item)
     
+    # Get current config to determine which columns to show
+    config = load_config()
+    show_banner = config.get("banner_grabbing", False)
+    show_os = config.get("os_fingerprinting", False)
+    
     # Add all current scan results
     for result in scan_results:
-        values = (
+        # Prepare banner text for display (truncate if too long)
+        banner_text = result.get('banner', 'No banner')
+        if len(banner_text) > 50:
+            banner_text = banner_text[:47] + "..."
+        
+        # Prepare OS info for display
+        os_info = result.get('os_info', '')
+        if len(os_info) > 30:
+            os_info = os_info[:27] + "..."
+        
+        # Build values list based on enabled features
+        values = [
             result['host'],
             result['port'],
             result['protocol'],
             result['status'],
-            result['service'],
-            f"{result['response_time']}ms" if result['response_time'] > 0 else "-"
-        )
+            result['service']
+        ]
+        
+        # Only add banner column if banner grabbing is enabled
+        if show_banner:
+            values.append(banner_text)
+        
+        # Only add OS info column if OS fingerprinting is enabled  
+        if show_os:
+            values.append(os_info)
+        
+        # Always add response time at the end
+        values.append(f"{result['response_time']}ms" if result['response_time'] > 0 else "-")
         
         # Insert item with appropriate tag for color coding
         tag = ""
@@ -1800,7 +2296,11 @@ def update_results_tree(results_tree, scan_results):
         else:
             tag = "filtered"
             
-        results_tree.insert("", "end", values=values, tags=(tag,))
+        results_tree.insert("", "end", values=tuple(values), tags=(tag,))
+    
+    # Enable clear button if there are results to display
+    if scan_results and hasattr(root, 'clear_button'):
+        root.clear_button.config(state=tk.NORMAL)
 
 def check_ports_threaded_with_export(hosts, ports, results_tree, clear_button, config, scan_data):
     # Removed clear_button.config(state=tk.NORMAL) - will be enabled at completion
@@ -1826,6 +2326,25 @@ def check_ports_threaded_with_export(hosts, ports, results_tree, clear_button, c
     counter_lock = threading.Lock()
     scan_results = []
 
+    def update_completion_ui():
+        """Update UI when scan completes or is stopped"""
+        host_count = len(hosts)
+        port_count = len(ports)
+        
+        if stop_scan_event.is_set():
+            # Scan was stopped
+            root.status_label.config(text=f"Scan stopped - {len(scan_results)} results collected")
+            root.stop_button.config(text="Stopped", state=tk.DISABLED)
+        else:
+            # Scan completed normally
+            root.status_label.config(text=f"Scan complete - {host_count} host(s), {port_count} port(s) checked")
+            root.stop_button.pack_forget()  # Hide stop button for completed scans
+            root.stop_button.config(state=tk.NORMAL, text="Stop Scan")  # Reset for next scan
+        
+        # Always re-enable check button and clear button at completion
+        root.check_button.config(state=tk.NORMAL)
+        clear_button.config(state=tk.NORMAL)  # Enable clear button when scan completes/stops
+
     def on_port_done():
         with counter_lock:
             counter["count"] += 1
@@ -1841,38 +2360,55 @@ def check_ports_threaded_with_export(hosts, ports, results_tree, clear_button, c
             
             if counter["count"] == total_scans or stop_scan_event.is_set():
                 counter["completed"] = 1
-                # Only update results tree once
-                if not counter["ui_updated"]:
-                    counter["ui_updated"] = True
-                    results_tree.after(0, lambda: update_results_tree(results_tree, scan_results))
                 
-                # Export results after scanning is complete (only if not stopped)
-                if current_config.get("export_results", False) and not stop_scan_event.is_set():
-                    try:
-                        export_results_to_file(scan_data, scan_results, current_config)
-                    except Exception as e:
-                        messagebox.showerror("Export Error", f"Could not export results:\n{e}")
-                
-                # Update status label and button state on main thread
-                def update_completion_ui():
-                    host_count = len(hosts)
-                    port_count = len(ports)
-                    if stop_scan_event.is_set():
-                        root.status_label.config(text=f"Scan stopped - {len(scan_results)} results collected")
-                        # Update stop button to show "Stopped" but don't hide it
-                        root.stop_button.config(text="Stopped", state=tk.DISABLED)
-                    else:
-                        root.status_label.config(text=f"Scan complete - {host_count} host(s), {port_count} port(s) checked")
-                        # For completed scans, hide stop button immediately
-                        root.stop_button.pack_forget()
-                        root.stop_button.config(state=tk.NORMAL, text="Stop Scan")
+                # Perform OS fingerprinting for each host if enabled
+                if (current_config.get("os_fingerprinting", False) and 
+                    not stop_scan_event.is_set()):
                     
-                    # Always re-enable check button and clear button at completion
-                    root.check_button.config(state=tk.NORMAL)
-                    clear_button.config(state=tk.NORMAL)  # Enable clear button when scan completes/stops
-                
-                # Schedule UI update on main thread
-                root.after(0, update_completion_ui)
+                    root.status_label.config(text="Performing OS fingerprinting...")
+                    
+                    def os_fingerprint_task():
+                        for host in hosts:
+                            if stop_scan_event.is_set():
+                                break
+                            perform_os_fingerprinting(host, scan_results, current_config)
+                        
+                        # Update UI after OS fingerprinting
+                        def complete_scan():
+                            if not counter["ui_updated"]:
+                                counter["ui_updated"] = True
+                                results_tree.after(0, lambda: update_results_tree(results_tree, scan_results))
+                            
+                            # Export results after scanning is complete (only if not stopped)
+                            if current_config.get("export_results", False) and not stop_scan_event.is_set():
+                                try:
+                                    export_results_to_file(scan_data, scan_results, current_config)
+                                except Exception as e:
+                                    messagebox.showerror("Export Error", f"Could not export results:\n{e}")
+                            
+                            # Update completion UI
+                            root.after(0, update_completion_ui)
+                        
+                        root.after(0, complete_scan)
+                    
+                    # Run OS fingerprinting in separate thread
+                    threading.Thread(target=os_fingerprint_task, daemon=True).start()
+                    
+                else:
+                    # No OS fingerprinting, proceed directly to completion
+                    if not counter["ui_updated"]:
+                        counter["ui_updated"] = True
+                        results_tree.after(0, lambda: update_results_tree(results_tree, scan_results))
+                    
+                    # Export results after scanning is complete (only if not stopped)
+                    if current_config.get("export_results", False) and not stop_scan_event.is_set():
+                        try:
+                            export_results_to_file(scan_data, scan_results, current_config)
+                        except Exception as e:
+                            messagebox.showerror("Export Error", f"Could not export results:\n{e}")
+                    
+                    # Schedule UI update on main thread
+                    root.after(0, update_completion_ui)
                 
                 # Reset progress bar after completion
                 root.after(3000, lambda: (
@@ -1914,15 +2450,7 @@ def check_ports_threaded_with_export(hosts, ports, results_tree, clear_button, c
     
     def trigger_stop_completion():
         """Helper function to trigger completion UI when scan is stopped"""
-        def force_completion_ui():
-            root.status_label.config(text=f"Scan stopped - {len(scan_results)} results collected")
-            root.stop_button.config(text="Stopped", state=tk.DISABLED)  # Disable but don't hide
-            root.progress_percentage.pack_forget()  # Hide percentage when stopped
-            root.progress_bar.pack_configure(padx=0)  # Reset progress bar padding
-            root.check_button.config(state=tk.NORMAL)
-            clear_button.config(state=tk.NORMAL)  # Enable clear button when stopped
-        
-        root.after(0, force_completion_ui)
+        root.after(0, update_completion_ui)
 
     def run_scan_batch():
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -2075,6 +2603,10 @@ def on_check_ports_with_export():
             scan_status += " (delayed)"
         if config.get("fragmented_packets", False) and fragmented_scanner.available:
             scan_status += " (fragmented)"
+        if config.get("banner_grabbing", False):
+            scan_status += " (banners)"
+        if config.get("os_fingerprinting", False):
+            scan_status += " (OS detect)"
         root.status_label.config(text=scan_status)
         
         # Prepare scan data for export
@@ -2086,7 +2618,9 @@ def on_check_ports_with_export():
             'protocol': root.protocol_var.get(),
             'is_cidr': is_cidr,
             'scanned_hosts': hosts if is_cidr else [resolved_ip],
-            'fragmented_used': config.get("fragmented_packets", False) and fragmented_scanner.available
+            'fragmented_used': config.get("fragmented_packets", False) and fragmented_scanner.available,
+            'banner_grabbing_used': config.get("banner_grabbing", False),
+            'os_fingerprinting_used': config.get("os_fingerprinting", False)
         }
         
         threading.Thread(
@@ -2156,7 +2690,8 @@ def sort_treeview(tree, col, reverse):
         tree.move(child, '', index)
     
     # Update column heading to show sort direction
-    for column in ['Host', 'Port', 'Protocol', 'Status', 'Service', 'Response Time']:
+    current_columns = root.results_tree['columns']
+    for column in current_columns:
         if column == col:
             tree.heading(column, text=f"{column} {'↓' if reverse else '↑'}")
         else:
@@ -2183,30 +2718,37 @@ def filter_results():
     visible_items = []
     hidden_items = []
     
+    # Get current column structure
+    current_columns = root.results_tree['columns']
+    
     # Categorize items based on search criteria
     for item in root.results_tree.get_children():
         values = root.results_tree.item(item)['values']
-        if not values or len(values) < 6:
+        if not values or len(values) < len(current_columns):
             continue
             
-        host, port, protocol, status, service, response_time = values
+        # Create searchable text from all values
+        searchable_text = " ".join(str(val) for val in values).lower()
         
         # Text search filter
         show_item = True
         if search_term:
-            searchable_text = f"{host} {port} {protocol} {status} {service}".lower()
             if search_term not in searchable_text:
                 show_item = False
         
-        # Determine original tag based on status
-        if status == 'OPEN':
-            original_tag = "open"
-        elif status == 'CLOSED':
-            original_tag = "closed"
-        elif status == 'ERROR':
-            original_tag = "error"
+        # Determine original tag based on status (which should be the 4th column)
+        if len(values) >= 4:
+            status = values[3]  # Status is always the 4th column
+            if status == 'OPEN':
+                original_tag = "open"
+            elif status == 'CLOSED':
+                original_tag = "closed"
+            elif status == 'ERROR':
+                original_tag = "error"
+            else:
+                original_tag = "filtered"
         else:
-            original_tag = "filtered"
+            original_tag = "normal"
         
         if show_item:
             visible_items.append((item, original_tag))
@@ -2246,7 +2788,7 @@ def run_gui():
     set_window_icon(root)
     root.title("Port Checker Plus")
     root.configure(bg="#f8f8f8")
-    root.geometry("1100x660")  # Increased width for additional column
+    root.geometry("1300x660")  # Increased width for additional columns
 
     menubar = Menu(root)
     file_menu = Menu(menubar, tearoff=0)
@@ -2276,7 +2818,7 @@ def run_gui():
                            font=("Segoe UI", 12, "bold"))
     warning_icon.pack(side="left")
     
-    warning_text = tk.Label(header_content, text="STEALTH SETTINGS ENABLED", 
+    warning_text = tk.Label(header_content, text="ADVANCED FEATURES ENABLED", 
                            bg="#e74c3c", fg="white", font=("Segoe UI", 10, "bold"))
     warning_text.pack(side="left", padx=(8, 0))
     
@@ -2369,20 +2911,26 @@ def run_gui():
     root.results_frame = tk.Frame(root, bg="#f8f8f8")
     root.results_frame.pack(padx=12, pady=(0, 10), fill="both", expand=True)
 
-    # Create Treeview with columns (added Host column)
-    columns = ('Host', 'Port', 'Protocol', 'Status', 'Service', 'Response Time')
-    root.results_tree = ttk.Treeview(root.results_frame, columns=columns, show='headings', height=15)
+    # Create Treeview with dynamic columns based on config
+    dynamic_columns = get_dynamic_columns(config)
+    root.results_tree = ttk.Treeview(root.results_frame, columns=dynamic_columns, show='headings', height=15)
 
     # Define column properties
-    root.results_tree.column('Host', width=120, anchor='center')
-    root.results_tree.column('Port', width=80, anchor='center')
-    root.results_tree.column('Protocol', width=80, anchor='center')
-    root.results_tree.column('Status', width=120, anchor='center')
-    root.results_tree.column('Service', width=150, anchor='center')
-    root.results_tree.column('Response Time', width=100, anchor='center')
-
-    # Configure column headings with sorting
-    for col in columns:
+    column_widths = {
+        'Host': 120,
+        'Port': 70,
+        'Protocol': 70,
+        'Status': 100,
+        'Service': 120,
+        'Banner': 200,
+        'OS Info': 150,
+        'Response Time': 100
+    }
+    
+    # Configure columns that are present
+    for col in dynamic_columns:
+        root.results_tree.column(col, width=column_widths.get(col, 100), 
+                                anchor='center' if col != 'Banner' else 'w')
         root.results_tree.heading(col, text=col, 
                                  command=lambda c=col: toggle_sort(c))
 
