@@ -1803,7 +1803,7 @@ def update_results_tree(results_tree, scan_results):
         results_tree.insert("", "end", values=values, tags=(tag,))
 
 def check_ports_threaded_with_export(hosts, ports, results_tree, clear_button, config, scan_data):
-    clear_button.config(state=tk.NORMAL)
+    # Removed clear_button.config(state=tk.NORMAL) - will be enabled at completion
 
     # Reload config to get the latest settings (in case user just changed them)
     current_config = load_config()
@@ -1859,21 +1859,17 @@ def check_ports_threaded_with_export(hosts, ports, results_tree, clear_button, c
                     port_count = len(ports)
                     if stop_scan_event.is_set():
                         root.status_label.config(text=f"Scan stopped - {len(scan_results)} results collected")
-                        # Update stop button to show "Stopped" briefly before hiding
-                        root.stop_button.config(text="Stopped")
-                        # Hide stop button after 2 seconds and reset its state
-                        root.after(2000, lambda: (
-                            root.stop_button.pack_forget(),
-                            root.stop_button.config(state=tk.NORMAL, text="Stop Scan")
-                        ))
+                        # Update stop button to show "Stopped" but don't hide it
+                        root.stop_button.config(text="Stopped", state=tk.DISABLED)
                     else:
                         root.status_label.config(text=f"Scan complete - {host_count} host(s), {port_count} port(s) checked")
                         # For completed scans, hide stop button immediately
                         root.stop_button.pack_forget()
                         root.stop_button.config(state=tk.NORMAL, text="Stop Scan")
                     
-                    # Always re-enable check button
+                    # Always re-enable check button and clear button at completion
                     root.check_button.config(state=tk.NORMAL)
+                    clear_button.config(state=tk.NORMAL)  # Enable clear button when scan completes/stops
                 
                 # Schedule UI update on main thread
                 root.after(0, update_completion_ui)
@@ -1920,15 +1916,11 @@ def check_ports_threaded_with_export(hosts, ports, results_tree, clear_button, c
         """Helper function to trigger completion UI when scan is stopped"""
         def force_completion_ui():
             root.status_label.config(text=f"Scan stopped - {len(scan_results)} results collected")
-            root.stop_button.config(text="Stopped")
+            root.stop_button.config(text="Stopped", state=tk.DISABLED)  # Disable but don't hide
             root.progress_percentage.pack_forget()  # Hide percentage when stopped
             root.progress_bar.pack_configure(padx=0)  # Reset progress bar padding
-            root.after(1000, lambda: (
-                root.stop_button.pack_forget(),
-                root.stop_button.config(state=tk.NORMAL, text="Stop Scan")
-            ))
             root.check_button.config(state=tk.NORMAL)
-            # Remove duplicate update_results_tree call - handled by on_port_done() with flag
+            clear_button.config(state=tk.NORMAL)  # Enable clear button when stopped
         
         root.after(0, force_completion_ui)
 
@@ -2053,6 +2045,7 @@ def on_check_ports_with_export():
             messagebox.showwarning("Input Error", "No valid ports found in input.")
             return
             
+        # Keep Clear Results button disabled during scan
         root.clear_button.config(state=tk.DISABLED)
         
         # Disable check button and show stop button
@@ -2101,7 +2094,7 @@ def on_check_ports_with_export():
             args=(hosts, ports, root.results_tree, root.clear_button, config, scan_data),
             daemon=True
         ).start()
-        root.clear_button.config(state=tk.NORMAL)
+        # Removed clear_button.config(state=tk.NORMAL) - will be enabled when scan completes
     except Exception as e:
         # Reset UI state on error
         root.check_button.config(state=tk.NORMAL)
@@ -2121,20 +2114,8 @@ def on_stop_scan():
     # Re-enable check button immediately so user can start new scan
     root.check_button.config(state=tk.NORMAL)
     
-    # Force completion UI update after a short delay
-    def force_completion():
-        if stop_scan_event.is_set():  # Only if still in stopped state
-            root.status_label.config(text="Scan stopped")
-            root.stop_button.config(text="Stopped")
-            root.progress_percentage.pack_forget()  # Hide percentage when stopped
-            root.progress_bar.pack_configure(padx=0)  # Reset progress bar padding
-            # Hide stop button after 1 second and reset its state
-            root.after(1000, lambda: (
-                root.stop_button.pack_forget(),
-                root.stop_button.config(state=tk.NORMAL, text="Stop Scan")
-            ))
-    
-    root.after(500, force_completion)
+    # Note: Stop button will be updated to "Stopped" and disabled in completion handler
+    # It will only be hidden when user clicks Clear Results
 
 def clear_results_tree():
     """Clear the results tree"""
@@ -2148,7 +2129,7 @@ def clear_results_tree():
     root.status_label.config(text="Ready")
     # Reset UI state
     root.check_button.config(state=tk.NORMAL)
-    root.stop_button.pack_forget()
+    root.stop_button.pack_forget()  # Hide stop button when clearing results
     root.stop_button.config(state=tk.NORMAL, text="Stop Scan")  # Reset stop button state
     stop_scan_event.clear()
 
