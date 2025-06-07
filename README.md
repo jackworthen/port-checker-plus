@@ -156,7 +156,7 @@ Access via **Edit → Settings** to customize:
 - ⏱️ **Variable Delays** - Add 300-700ms random delays
 - 🚨 **Visual Indicators** - Red window border appears when any advanced feature is enabled
 - 🚩 **Service Banner Grabbing** - Provides detailed service version information
-- 🫆 **OS Fingerprinting** - Attempts to identify the target Operating System using TCP/IP stack fingerprinting
+- ☝️ **OS Fingerprinting** - Attempts to identify the target Operating System using TCP/IP stack fingerprinting
 
 #### 📊 **Logging Tab**
 - 📝 **Export Formats** - TXT, CSV, JSON, XML
