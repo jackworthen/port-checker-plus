@@ -1250,7 +1250,7 @@ def open_settings_window(root, config, initial_tab="Defaults"):
     
     settings_win = tk.Toplevel(root)
     settings_win.title("Settings - Port Checker Plus")
-    settings_win.geometry("520x770")  # Adjusted height after moving discovery to advanced tab
+    settings_win.geometry("520x685")  # Adjusted height after moving discovery to advanced tab
     settings_win.configure(bg="#ffffff")
     settings_win.transient(root)
     settings_win.grab_set()
@@ -1484,8 +1484,8 @@ def open_settings_window(root, config, initial_tab="Defaults"):
     # Stealth Options Section
     stealth_section = tk.LabelFrame(advanced_frame, text="Stealth Options", 
                                    font=("Segoe UI", 10, "bold"), bg="#ffffff", 
-                                   fg="#34495e", padx=15, pady=10)
-    stealth_section.pack(fill="x", padx=15, pady=(15, 10))
+                                   fg="#34495e", padx=15, pady=8)
+    stealth_section.pack(fill="x", padx=15, pady=(15, 8))
 
     # Port randomization option
     randomize_ports_var = tk.BooleanVar(value=config.get("randomize_ports", False))
@@ -1494,14 +1494,14 @@ def open_settings_window(root, config, initial_tab="Defaults"):
                                     variable=randomize_ports_var,
                                     bg="#ffffff", font=("Segoe UI", 10), 
                                     fg="#2c3e50", activebackground="#ffffff")
-    randomize_check.pack(anchor="w", pady=(5, 0))
+    randomize_check.pack(anchor="w", pady=(3, 0))
 
     # Description for randomization
     randomize_desc = tk.Label(stealth_section, 
                              text="Randomizes the order in which ports are scanned.", 
                              font=("Segoe UI", 9), bg="#ffffff", fg="#7f8c8d", 
                              wraplength=450, justify="left")
-    randomize_desc.pack(anchor="w", pady=(2, 15))
+    randomize_desc.pack(anchor="w", pady=(1, 8))
 
     # Variable delay scan option
     variable_delay_var = tk.BooleanVar(value=config.get("variable_delay_scan", False))
@@ -1510,14 +1510,14 @@ def open_settings_window(root, config, initial_tab="Defaults"):
                                          variable=variable_delay_var,
                                          bg="#ffffff", font=("Segoe UI", 10), 
                                          fg="#2c3e50", activebackground="#ffffff")
-    variable_delay_check.pack(anchor="w", pady=(5, 0))
+    variable_delay_check.pack(anchor="w", pady=(3, 0))
 
     # Description for variable delay
     delay_desc = tk.Label(stealth_section, 
                          text="Adds random delays (300-700ms) between port scans to avoid rate limiting.", 
                          font=("Segoe UI", 9), bg="#ffffff", fg="#7f8c8d", 
                          wraplength=450, justify="left")
-    delay_desc.pack(anchor="w", pady=(2, 15))
+    delay_desc.pack(anchor="w", pady=(1, 8))
 
     # Fragmented packet scanning option
     fragmented_packets_var = tk.BooleanVar(value=config.get("fragmented_packets", False))
@@ -1526,14 +1526,14 @@ def open_settings_window(root, config, initial_tab="Defaults"):
                                      variable=fragmented_packets_var,
                                      bg="#ffffff", font=("Segoe UI", 10), 
                                      fg="#2c3e50", activebackground="#ffffff")
-    fragmented_check.pack(anchor="w", pady=(5, 0))
+    fragmented_check.pack(anchor="w", pady=(3, 0))
 
     # Description for fragmented scanning
     fragmented_desc = tk.Label(stealth_section, 
                               text="Splits packets into fragments to evade basic firewalls and IDS. Requires administrative privileges.", 
                               font=("Segoe UI", 9), bg="#ffffff", fg="#7f8c8d", 
                               wraplength=450, justify="left")
-    fragmented_desc.pack(anchor="w", pady=(2, 10))
+    fragmented_desc.pack(anchor="w", pady=(1, 5))
 
     # Fragmented scanning availability status
     if fragmented_scanner.available:
@@ -1550,13 +1550,13 @@ def open_settings_window(root, config, initial_tab="Defaults"):
         fragmented_check.config(state=tk.DISABLED)
         fragmented_packets_var.set(False)
     
-    frag_status.pack(anchor="w", pady=(0, 0))
+    frag_status.pack(anchor="w", pady=(0, 3))
 
     # Discovery Options Section
     discovery_section = tk.LabelFrame(advanced_frame, text="Discovery Options", 
                                      font=("Segoe UI", 10, "bold"), bg="#ffffff", 
-                                     fg="#34495e", padx=15, pady=10)
-    discovery_section.pack(fill="x", padx=15, pady=10)
+                                     fg="#34495e", padx=15, pady=8)
+    discovery_section.pack(fill="x", padx=15, pady=8)
 
     # Banner grabbing option
     banner_grabbing_var = tk.BooleanVar(value=config.get("banner_grabbing", False))
@@ -1565,15 +1565,14 @@ def open_settings_window(root, config, initial_tab="Defaults"):
                                  variable=banner_grabbing_var,
                                  bg="#ffffff", font=("Segoe UI", 10), 
                                  fg="#2c3e50", activebackground="#ffffff")
-    banner_check.pack(anchor="w", pady=(5, 0))
+    banner_check.pack(anchor="w", pady=(3, 0))
 
     # Description for banner grabbing
     banner_desc = tk.Label(discovery_section, 
-                          text="Attempts to identify services by grabbing banners from open TCP ports. "
-                               "Provides detailed service version information but increases scan time.", 
+                          text="Provides detailed service version information but increases scan time.", 
                           font=("Segoe UI", 9), bg="#ffffff", fg="#7f8c8d", 
                           wraplength=450, justify="left")
-    banner_desc.pack(anchor="w", pady=(2, 15))
+    banner_desc.pack(anchor="w", pady=(1, 8))
 
     # OS fingerprinting option
     os_fingerprinting_var = tk.BooleanVar(value=config.get("os_fingerprinting", False))
@@ -1582,15 +1581,14 @@ def open_settings_window(root, config, initial_tab="Defaults"):
                              variable=os_fingerprinting_var,
                              bg="#ffffff", font=("Segoe UI", 10), 
                              fg="#2c3e50", activebackground="#ffffff")
-    os_check.pack(anchor="w", pady=(5, 0))
+    os_check.pack(anchor="w", pady=(3, 0))
 
     # Description for OS fingerprinting
     os_desc = tk.Label(discovery_section, 
-                      text="Attempts to identify the target operating system using TCP/IP stack fingerprinting "
-                           "and common service patterns. Results may vary in accuracy.", 
+                      text="Attempts to identify the target OS using TCP/IP stack fingerprinting.", 
                       font=("Segoe UI", 9), bg="#ffffff", fg="#7f8c8d", 
                       wraplength=450, justify="left")
-    os_desc.pack(anchor="w", pady=(2, 15))
+    os_desc.pack(anchor="w", pady=(1, 5))
 
     # ===== EXPORT TAB =====
     export_frame = tk.Frame(notebook, bg="#ffffff")
