@@ -506,9 +506,16 @@ def is_cidr_notation(host_input):
 def parse_cidr_hosts(host_input, config):
     """Parse CIDR notation and return list of host IPs"""
     try:
+        # FIXED: Use strict=False to handle inputs like 192.168.1.1/27
         network = ipaddress.ip_network(host_input, strict=False)
         hosts = []
         max_hosts = config.get("max_cidr_hosts", 254)
+        
+        print(f"DEBUG: Parsing CIDR {host_input}")
+        print(f"DEBUG: Network object: {network}")
+        print(f"DEBUG: Network address: {network.network_address}")
+        print(f"DEBUG: Broadcast address: {network.broadcast_address}")
+        print(f"DEBUG: Number of addresses: {network.num_addresses}")
         
         # For networks larger than max_hosts, warn user
         if network.num_addresses > max_hosts + 2:  # +2 for network and broadcast
@@ -523,22 +530,31 @@ def parse_cidr_hosts(host_input, config):
             if not response:
                 return None
         
-        # Get host addresses (excluding network and broadcast for /31 and smaller)
+        # FIXED: Get host addresses properly
         host_count = 0
-        for ip in network.hosts():
-            if host_count >= max_hosts:
-                break
-            hosts.append(str(ip))
-            host_count += 1
         
-        # If no hosts() (like /31 or /32), use all addresses
-        if not hosts:
+        # For /31 and /32 networks, network.hosts() returns empty generator
+        # For these special cases, we need to use all addresses
+        if network.prefixlen >= 31:
+            # For /31 and /32, include all addresses
             for ip in network:
                 if host_count >= max_hosts:
                     break
                 hosts.append(str(ip))
                 host_count += 1
-                
+                print(f"DEBUG: Added host (special case): {ip}")
+        else:
+            # For all other networks, use hosts() which excludes network and broadcast
+            for ip in network.hosts():
+                if host_count >= max_hosts:
+                    break
+                hosts.append(str(ip))
+                host_count += 1
+                print(f"DEBUG: Added host: {ip}")
+        
+        print(f"DEBUG: Total hosts parsed: {len(hosts)}")
+        print(f"DEBUG: First 5 hosts: {hosts[:5] if len(hosts) >= 5 else hosts}")
+        
         return hosts
     except ValueError as e:
         messagebox.showerror("CIDR Error", f"Invalid CIDR notation: {e}")
