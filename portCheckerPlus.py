@@ -1774,6 +1774,11 @@ def scan_udp_port(host, port, results_tree, config, scan_results):
 
 def update_results_tree(results_tree, scan_results):
     """Update the results tree with scan data and apply color coding"""
+    # Clear existing results first to prevent duplicates
+    for item in results_tree.get_children():
+        results_tree.delete(item)
+    
+    # Add all current scan results
     for result in scan_results:
         values = (
             result['host'],
@@ -1817,7 +1822,7 @@ def check_ports_threaded_with_export(hosts, ports, results_tree, clear_button, c
     if protocol in ("UDP", "TCP/UDP"):
         total_scans += len(hosts) * len(ports)
 
-    counter = {"count": 0, "completed": 0}
+    counter = {"count": 0, "completed": 0, "ui_updated": False}  # Added ui_updated flag
     counter_lock = threading.Lock()
     scan_results = []
 
@@ -1836,8 +1841,10 @@ def check_ports_threaded_with_export(hosts, ports, results_tree, clear_button, c
             
             if counter["count"] == total_scans or stop_scan_event.is_set():
                 counter["completed"] = 1
-                # Update the results tree when scanning is complete
-                results_tree.after(0, lambda: update_results_tree(results_tree, scan_results))
+                # Only update results tree once
+                if not counter["ui_updated"]:
+                    counter["ui_updated"] = True
+                    results_tree.after(0, lambda: update_results_tree(results_tree, scan_results))
                 
                 # Export results after scanning is complete (only if not stopped)
                 if current_config.get("export_results", False) and not stop_scan_event.is_set():
@@ -1872,7 +1879,12 @@ def check_ports_threaded_with_export(hosts, ports, results_tree, clear_button, c
                 root.after(0, update_completion_ui)
                 
                 # Reset progress bar after completion
-                root.after(3000, lambda: (root.progress_var.set(0), root.progress_percentage.config(text="0%"), root.status_label.config(text="Ready")))
+                root.after(3000, lambda: (
+                    root.progress_var.set(0), 
+                    root.progress_percentage.pack_forget(),  # Hide percentage when resetting
+                    root.progress_bar.pack_configure(padx=0),  # Reset progress bar padding
+                    root.status_label.config(text="Ready")
+                ))
 
     def run_tcp_scan(h, p):
         if stop_scan_event.is_set():
@@ -1909,12 +1921,14 @@ def check_ports_threaded_with_export(hosts, ports, results_tree, clear_button, c
         def force_completion_ui():
             root.status_label.config(text=f"Scan stopped - {len(scan_results)} results collected")
             root.stop_button.config(text="Stopped")
+            root.progress_percentage.pack_forget()  # Hide percentage when stopped
+            root.progress_bar.pack_configure(padx=0)  # Reset progress bar padding
             root.after(1000, lambda: (
                 root.stop_button.pack_forget(),
                 root.stop_button.config(state=tk.NORMAL, text="Stop Scan")
             ))
             root.check_button.config(state=tk.NORMAL)
-            results_tree.after(0, lambda: update_results_tree(results_tree, scan_results))
+            # Remove duplicate update_results_tree call - handled by on_port_done() with flag
         
         root.after(0, force_completion_ui)
 
@@ -2049,6 +2063,10 @@ def on_check_ports_with_export():
         # Initialize progress bar and show scanning status
         root.progress_var.set(0)
         root.progress_percentage.config(text="0%")
+        # Repack widgets in correct order: percentage first (left), then progress bar (right)
+        root.progress_bar.pack_forget()  # Temporarily unpack progress bar
+        root.progress_percentage.pack(side="left")  # Pack percentage first (will be on left)
+        root.progress_bar.pack(side="left", padx=(8, 0))  # Pack progress bar after percentage (will be on right)
         if is_cidr:
             scan_status = f"Scanning {host_input} ({len(hosts)} hosts) - {len(ports)} ports"
         else:
@@ -2088,6 +2106,8 @@ def on_check_ports_with_export():
         # Reset UI state on error
         root.check_button.config(state=tk.NORMAL)
         root.stop_button.pack_forget()
+        root.progress_percentage.pack_forget()  # Hide percentage on error
+        root.progress_bar.pack_configure(padx=0)  # Reset progress bar padding
         messagebox.showerror("Error", str(e))
 
 def on_stop_scan():
@@ -2106,6 +2126,8 @@ def on_stop_scan():
         if stop_scan_event.is_set():  # Only if still in stopped state
             root.status_label.config(text="Scan stopped")
             root.stop_button.config(text="Stopped")
+            root.progress_percentage.pack_forget()  # Hide percentage when stopped
+            root.progress_bar.pack_configure(padx=0)  # Reset progress bar padding
             # Hide stop button after 1 second and reset its state
             root.after(1000, lambda: (
                 root.stop_button.pack_forget(),
@@ -2121,7 +2143,8 @@ def clear_results_tree():
     root.clear_button.config(state=tk.DISABLED)
     # Reset progress bar and status when clearing
     root.progress_var.set(0)
-    root.progress_percentage.config(text="0%")
+    root.progress_percentage.pack_forget()  # Hide percentage when clearing
+    root.progress_bar.pack_configure(padx=0)  # Reset progress bar padding
     root.status_label.config(text="Ready")
     # Reset UI state
     root.check_button.config(state=tk.NORMAL)
@@ -2416,14 +2439,14 @@ def run_gui():
     progress_container = tk.Frame(root.progress_frame, bg="#f8f8f8")
     progress_container.pack(side="right", padx=(10, 0))
     
+    # Percentage label (initially hidden)
+    root.progress_percentage = tk.Label(progress_container, text="0%", bg="#f8f8f8", font=("Segoe UI", 9, "bold"), fg="#2c3e50", width=4)
+    # Don't pack initially - will be shown when scan starts
+    
     # Progress bar
     root.progress_var = tk.DoubleVar()
     root.progress_bar = ttk.Progressbar(progress_container, variable=root.progress_var, maximum=100, length=200)
-    root.progress_bar.pack(side="left")
-    
-    # Percentage label
-    root.progress_percentage = tk.Label(progress_container, text="0%", bg="#f8f8f8", font=("Segoe UI", 9, "bold"), fg="#2c3e50", width=4)
-    root.progress_percentage.pack(side="left", padx=(8, 0))
+    root.progress_bar.pack(side="left")  # Pack initially so it shows when app starts
 
     # Initialize the profile indicator and advanced window appearance
     update_profile_indicator()
