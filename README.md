@@ -155,7 +155,8 @@ Access via **Edit → Settings** to customize:
 - 🎲 **Port Randomization** - Randomize scan order
 - ⏱️ **Variable Delays** - Add 300-700ms random delays
 - 🚨 **Visual Indicators** - Red window border appears when any advanced feature is enabled
-- ⚠️ **Responsible Use Warning** - Ethical guidelines and legal reminders
+- 🚩 **Service Banner Grabbing** - Provides detailed service version information
+- 🫆 **OS Fingerprinting** - Attempts to identify the target Operating System using TCP/IP stack fingerprinting
 
 #### 📊 **Logging Tab**
 - 📝 **Export Formats** - TXT, CSV, JSON, XML
