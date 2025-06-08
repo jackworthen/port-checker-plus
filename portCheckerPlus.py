@@ -706,15 +706,21 @@ class PingTool:
             cmd = ["ping", "-c", str(count), "-W", str(timeout), host]
         
         try:
+            # Configure subprocess to hide window on Windows
+            popen_kwargs = {
+                'stdout': subprocess.PIPE,
+                'stderr': subprocess.PIPE,
+                'text': True,
+                'bufsize': 1,
+                'universal_newlines': True
+            }
+            
+            # Hide console window on Windows
+            if platform.system().lower() == "windows":
+                popen_kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
+            
             # Start the ping process
-            self.current_process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                bufsize=1,
-                universal_newlines=True
-            )
+            self.current_process = subprocess.Popen(cmd, **popen_kwargs)
             
             # Read output line by line
             for line in iter(self.current_process.stdout.readline, ''):
@@ -774,7 +780,7 @@ def open_ping_window(root):
     """Open the ping tool window"""
     ping_win = tk.Toplevel(root)
     ping_win.title("Ping Tool - Port Checker Plus")
-    ping_win.geometry("445x520")
+    ping_win.geometry("510x510")
     ping_win.configure(bg="#ffffff")
     ping_win.transient(root)
     ping_win.grab_set()
@@ -784,6 +790,14 @@ def open_ping_window(root):
     # Configure window grid weights
     ping_win.grid_rowconfigure(1, weight=1)
     ping_win.grid_columnconfigure(0, weight=1)
+    
+    # Add window close handler to stop ping when window is closed
+    def on_window_close():
+        """Handle window closing - stop ping and destroy window"""
+        ping_tool.stop_ping()
+        ping_win.destroy()
+    
+    ping_win.protocol("WM_DELETE_WINDOW", on_window_close)
     
     # Title and input frame
     input_frame = tk.Frame(ping_win, bg="#ffffff")
@@ -844,15 +858,20 @@ def open_ping_window(root):
     # Set Host button (positioned to the right)
     def set_host_to_main():
         """Copy the host from ping tool to main window's host entry"""
-        host_text = host_entry.get().strip()
-        if host_text and hasattr(root, 'host_entry'):
-            root.host_entry.delete(0, tk.END)
-            root.host_entry.insert(0, host_text)
-            ping_win.destroy()  # Close the ping window after setting host
-        elif not host_text:
-            messagebox.showwarning("No Host", "Please enter a host/IP address first.")
-        else:
-            messagebox.showerror("Error", "Main window not accessible.")
+        try:
+            host_text = host_entry.get().strip()
+            if host_text and hasattr(root, 'host_entry'):
+                root.host_entry.delete(0, tk.END)
+                root.host_entry.insert(0, host_text)
+                if ping_win.winfo_exists():
+                    ping_win.destroy()  # Close the ping window after setting host
+            elif not host_text:
+                messagebox.showwarning("No Host", "Please enter a host/IP address first.")
+            else:
+                messagebox.showerror("Error", "Main window not accessible.")
+        except tk.TclError:
+            # Widget has been destroyed, ignore
+            pass
     
     set_host_button = tk.Button(button_frame, text="Set Host", font=("Segoe UI", 10),
                                bg="#3498db", fg="white", activebackground="#2980b9", 
@@ -901,23 +920,38 @@ def open_ping_window(root):
     
     def append_result(text, tag="output"):
         """Append text to results with specified tag"""
-        results_text.config(state=tk.NORMAL)
-        results_text.insert(tk.END, text, tag)
-        results_text.see(tk.END)
-        results_text.config(state=tk.DISABLED)
-        # Enable clear button when results are added
-        clear_button.config(state=tk.NORMAL)
-        # Update the window to show new text immediately
-        ping_win.update_idletasks()
+        try:
+            # Check if the widget still exists before trying to modify it
+            if results_text.winfo_exists():
+                results_text.config(state=tk.NORMAL)
+                results_text.insert(tk.END, text, tag)
+                results_text.see(tk.END)
+                results_text.config(state=tk.DISABLED)
+                # Enable clear button when results are added
+                if clear_button.winfo_exists():
+                    clear_button.config(state=tk.NORMAL)
+                # Update the window to show new text immediately
+                if ping_win.winfo_exists():
+                    ping_win.update_idletasks()
+        except tk.TclError:
+            # Widget has been destroyed, ignore the update
+            pass
     
     def clear_results():
         """Clear the results text"""
-        results_text.config(state=tk.NORMAL)
-        results_text.delete(1.0, tk.END)
-        results_text.config(state=tk.DISABLED)
-        # Disable clear button when results are cleared
-        clear_button.config(state=tk.DISABLED)
-        status_label.config(text="Ready")
+        try:
+            if results_text.winfo_exists():
+                results_text.config(state=tk.NORMAL)
+                results_text.delete(1.0, tk.END)
+                results_text.config(state=tk.DISABLED)
+                # Disable clear button when results are cleared
+                if clear_button.winfo_exists():
+                    clear_button.config(state=tk.DISABLED)
+                if status_label.winfo_exists():
+                    status_label.config(text="Ready")
+        except tk.TclError:
+            # Widget has been destroyed, ignore the update
+            pass
     
     def start_ping():
         """Start the ping operation"""
@@ -949,9 +983,16 @@ def open_ping_window(root):
         
         def ping_complete():
             """Called when ping operation completes"""
-            ping_button.config(state=tk.NORMAL)
-            stop_button.config(state=tk.DISABLED)
-            status_label.config(text="Ping completed")
+            try:
+                if ping_button.winfo_exists():
+                    ping_button.config(state=tk.NORMAL)
+                if stop_button.winfo_exists():
+                    stop_button.config(state=tk.DISABLED)
+                if status_label.winfo_exists():
+                    status_label.config(text="Ping completed")
+            except tk.TclError:
+                # Widget has been destroyed, ignore the update
+                pass
         
         def run_ping():
             """Run ping in separate thread"""
@@ -967,9 +1008,16 @@ def open_ping_window(root):
     def stop_ping():
         """Stop the ping operation"""
         ping_tool.stop_ping()
-        ping_button.config(state=tk.NORMAL)
-        stop_button.config(state=tk.DISABLED)
-        status_label.config(text="Ping stopped")
+        try:
+            if ping_button.winfo_exists():
+                ping_button.config(state=tk.NORMAL)
+            if stop_button.winfo_exists():
+                stop_button.config(state=tk.DISABLED)
+            if status_label.winfo_exists():
+                status_label.config(text="Ping stopped")
+        except tk.TclError:
+            # Widget has been destroyed, ignore the update
+            pass
         append_result("Ping operation stopped by user\n", "error")
     
     # Bind button commands
