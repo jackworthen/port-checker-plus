@@ -17,6 +17,15 @@
 - ⚡ **High-Performance Threading** - Intelligent system-aware threading (20-2000+ threads)
 - 🧠 **Smart Resource Management** - Automatic optimization based on system capabilities
 
+### 🏓 **Network Connectivity Testing**
+- 🏓 **Integrated Ping Tool** - Test host connectivity before scanning
+- 🎛️ **Configurable Ping Settings** - Customizable packet count (1-100) and timeout (1-30s)
+- 📊 **Real-time Ping Results** - Live output display with color-coded status
+- 🔄 **Seamless Workflow Integration** - One-click host transfer to port scanner
+- 🖥️ **Cross-Platform Support** - Native ping commands on Windows, Linux, and macOS
+- 🛑 **Interactive Control** - Start, stop, and clear ping operations
+- 📝 **Professional Output** - Clean, organized results without terminal windows
+
 ### 🥷 **Advanced Stealth Features**
 - 🧩 **Fragmented Packet Scanning** - Split packets across IP fragments to evade basic firewalls and IDS
 - 🎲 **Port Randomization** - Randomize scan order for stealth operations
@@ -98,30 +107,48 @@ sudo python portCheckerPlus.py
 
 ### 🎯 Basic Usage
 
-1. **Single Host Scan:**
+1. **Test Connectivity First:**
+   - Go to **Tools → 🏓 Ping**
+   - Enter hostname or IP: `google.com` or `192.168.1.1`
+   - Set packet count and timeout
+   - Click **Start Ping** to test connectivity
+   - Click **Set Host** to copy to port scanner and close ping tool
+
+2. **Single Host Scan:**
    - Enter hostname or IP: `google.com` or `192.168.1.1`
    - Enter ports: `80,443,22` or `1-1000`
    - Click **Check Ports**
 
-2. **Network Range Scan:**
+3. **Network Range Scan:**
    - Enter CIDR notation: `192.168.1.0/24`
    - Select port profile or enter custom ports
    - Click **Check Ports**
 
-3. **High-Performance Scanning:**
+4. **High-Performance Scanning:**
    - Go to **Edit → Settings → General**
    - Increase **Max Concurrent Threads** (e.g., 500-1000)
    - Perfect for internal networks and large port ranges
 
-4. **Stealth Scanning:**
+5. **Stealth Scanning:**
    - Go to **Edit → Settings → Advanced**
    - Enable **Fragmented Packet Scanning** (requires admin privileges)
    - Enable **Port Randomization** and **Variable Delays**
    - Window will show red border and "ADVANCED MODE" in title
 
-5. **Stop Large Scans:**
+6. **Stop Large Scans:**
    - Click **Stop Scan** button
    - Results collected so far will be displayed
+
+### 🏓 **Ping Tool Workflow**
+1. **Open Ping Tool:** **Tools → 🏓 Ping**
+2. **Configure Settings:**
+   - Enter target host/IP
+   - Set packet count (1-100)
+   - Set timeout (1-30 seconds)
+3. **Test Connectivity:** Click **Start Ping**
+4. **Monitor Results:** View real-time ping output
+5. **Transfer to Scanner:** Click **Set Host** to copy host and return to main window
+6. **Proceed with Scanning:** Host is now ready for port scanning
 
 ---
 
@@ -163,6 +190,25 @@ Access via **Edit → Settings** to customize:
 - 📁 **Export Directory** - Choose save location
 - 🧹 **Log Management** - **UPDATED!** Always-available log cleanup (no longer hidden when logging is disabled)
 
+### 🛠️ **Tools Menu**
+Access additional utilities via **Tools**:
+
+#### 🏓 **Ping Tool**
+- 🎯 **Host/IP Input** - Enter target for connectivity testing
+- 🔢 **Packet Count** - Configure number of ping packets (1-100)
+- ⏱️ **Timeout Setting** - Set per-packet timeout (1-30 seconds)
+- 📊 **Real-time Results** - Live ping output with color coding:
+  - ⚫ **Normal Output** - Standard ping responses
+  - 🔴 **Error Messages** - Connection failures and timeouts
+  - 🔵 **Status Updates** - Operation start/stop notifications
+- 🎛️ **Control Buttons:**
+  - ▶️ **Start Ping** - Begin connectivity test
+  - ⏹️ **Stop Ping** - Interrupt ongoing operation
+  - 🧹 **Clear Results** - Clean output display
+  - 🔄 **Set Host** - Copy host to main scanner and close ping tool
+- 🖥️ **Cross-Platform** - Uses native system ping commands
+- 🎨 **Clean Interface** - No terminal windows on any platform
+
 ---
 
 ## ⚡ Performance Guide
@@ -199,6 +245,7 @@ Access via **Edit → Settings** to customize:
 - 🌐 **For external scanning:** Use lower counts (50-200) to avoid rate limiting
 - ⚡ **For maximum speed:** Disable variable delays and use port randomization
 - 🧩 **For stealth:** Enable fragmented scanning with administrative privileges
+- 🏓 **Before scanning:** Use ping tool to verify target accessibility
 
 ---
 
@@ -213,6 +260,7 @@ Access via **Edit → Settings** to customize:
 - 🛠️ Network troubleshooting and administration
 - 🚄 High-performance internal network scanning
 - 🛡️ **Penetration testing with explicit client permission**
+- 🏓 **Network connectivity testing and diagnostics**
 
 ### ❌ **Prohibited Activities:**
 - 🚫 Scanning networks without explicit written permission
@@ -240,6 +288,16 @@ Access via **Edit → Settings** to customize:
 - **Performance:** System-aware thread optimization and batch processing
 - **Network:** Socket-based scanning with timeout controls
 - **Advanced Features:** Raw socket implementation for packet fragmentation
+- **Connectivity Testing:** Cross-platform subprocess ping implementation
+
+### 🏓 **Integrated Ping Tool**
+- 🖥️ **Cross-Platform Implementation** - Native system ping commands
+- 🔇 **Silent Background Execution** - No terminal windows on Windows
+- 📊 **Real-time Output Processing** - Live parsing and display of ping results
+- 🎨 **Color-coded Results** - Visual distinction between success, errors, and status
+- 🛑 **Responsive Cancellation** - Immediate stop capability with proper cleanup
+- 🔄 **Seamless Integration** - One-click host transfer to port scanner
+- 🛡️ **Error Handling** - Graceful handling of network failures and invalid hosts
 
 ### 🧩 **Fragmented Packet Scanning Engine**
 - 🔌 **Raw Socket Implementation** - Low-level packet crafting and transmission
@@ -272,6 +330,7 @@ Access via **Edit → Settings** to customize:
 - `ipaddress` - CIDR network parsing
 - `concurrent.futures` - Advanced thread management
 - `struct` - Binary data handling for packet construction
+- `subprocess` - Cross-platform ping implementation
 
 ### 🔧 **Configuration Storage**
 - **Windows:** `%APPDATA%\PortCheckerPlus\config.json`
@@ -280,6 +339,7 @@ Access via **Edit → Settings** to customize:
 
 ### 🔑 **Privilege Requirements**
 - **Standard Scanning:** No special privileges required
+- **Ping Tool:** No special privileges required
 - **Fragmented Scanning:** Administrative/root privileges for raw socket access
 - **Automatic Detection:** System capability checking with helpful error messages
 
@@ -293,6 +353,7 @@ We welcome contributions! Here's how you can help:
 - Use the [Issues](https://github.com/jackworthen/port-checker-plus/issues) tab
 - Include your OS, Python version, privilege level, and steps to reproduce
 - For fragmented scanning issues, specify if admin privileges were used
+- For ping tool issues, include target host and network configuration
 
 ### 🔧 **Pull Requests**
 1. Fork the repository
@@ -307,6 +368,7 @@ We welcome contributions! Here's how you can help:
 - 📊 New export formats
 - 🔒 Enhanced security and stealth features
 - 🧩 Additional evasion techniques
+- 🏓 Enhanced network testing tools
 
 ---
 
@@ -327,6 +389,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **Fragmented scanning not available?** Ensure you're running with administrative privileges
 - **Performance issues?** Check thread count recommendations for your system
 - **Advanced mode not showing?** Verify advanced features are enabled in settings
+- **Ping tool not working?** Verify network connectivity and target host accessibility
+- **Terminal windows appearing?** Ensure you're using the compiled .exe version on Windows
 
 ---
 
