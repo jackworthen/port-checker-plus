@@ -805,7 +805,7 @@ def open_ping_window(root):
     input_frame.grid_columnconfigure(1, weight=1)
     
     # Ping Tool Section
-    ping_section = tk.LabelFrame(input_frame, text="Ping Tool", 
+    ping_section = tk.LabelFrame(input_frame, text="Configure", 
                                 font=("Segoe UI", 10, "bold"), bg="#ffffff", 
                                 fg="#34495e", padx=15, pady=10)
     ping_section.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 15))
@@ -838,7 +838,7 @@ def open_ping_window(root):
     button_frame.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(15, 0))
     
     # Ping button
-    ping_button = tk.Button(button_frame, text="Start", font=("Segoe UI", 10, "bold"),
+    ping_button = tk.Button(button_frame, text="Start", font=("Segoe UI", 10),
                            bg="#27ae60", fg="white", activebackground="#229954", 
                            relief="flat", padx=20, pady=8)
     ping_button.pack(side="left", padx=(0, 10))
