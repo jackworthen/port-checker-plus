@@ -18,6 +18,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import sys
 import struct
 import re  # Added for banner parsing
+import subprocess  # Added for ping functionality
 
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
@@ -681,6 +682,318 @@ class FragmentedPacketScanner:
 
 # Global fragmented scanner instance
 fragmented_scanner = FragmentedPacketScanner()
+
+# Ping Tool Implementation
+class PingTool:
+    """
+    Cross-platform ping implementation using subprocess
+    """
+    
+    def __init__(self):
+        self.current_process = None
+        self.stop_event = threading.Event()
+    
+    def ping(self, host, count=4, timeout=3, callback=None):
+        """
+        Ping a host and return results via callback
+        """
+        self.stop_event.clear()
+        
+        # Determine ping command based on operating system
+        if platform.system().lower() == "windows":
+            cmd = ["ping", "-n", str(count), "-w", str(timeout * 1000), host]
+        else:
+            cmd = ["ping", "-c", str(count), "-W", str(timeout), host]
+        
+        try:
+            # Start the ping process
+            self.current_process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+                universal_newlines=True
+            )
+            
+            # Read output line by line
+            for line in iter(self.current_process.stdout.readline, ''):
+                if self.stop_event.is_set():
+                    self.current_process.terminate()
+                    if callback:
+                        callback("Ping stopped by user\n", "info")
+                    return
+                
+                if line.strip():
+                    if callback:
+                        callback(line.strip() + "\n", "output")
+            
+            # Wait for process to complete
+            self.current_process.wait()
+            
+            # Get any remaining output from stderr
+            stderr_output = self.current_process.stderr.read()
+            if stderr_output and not self.stop_event.is_set():
+                if callback:
+                    callback(f"Error: {stderr_output}\n", "error")
+            
+            # Check return code
+            if self.current_process.returncode != 0 and not self.stop_event.is_set():
+                if callback:
+                    callback(f"Ping failed with exit code: {self.current_process.returncode}\n", "error")
+            elif not self.stop_event.is_set():
+                if callback:
+                    callback("Ping completed successfully\n", "info")
+                    
+        except FileNotFoundError:
+            if callback:
+                callback("Error: ping command not found\n", "error")
+        except Exception as e:
+            if callback:
+                callback(f"Error: {str(e)}\n", "error")
+        finally:
+            self.current_process = None
+    
+    def stop_ping(self):
+        """Stop the current ping operation"""
+        self.stop_event.set()
+        if self.current_process:
+            try:
+                self.current_process.terminate()
+                self.current_process.wait(timeout=2)
+            except:
+                try:
+                    self.current_process.kill()
+                except:
+                    pass
+
+# Global ping tool instance
+ping_tool = PingTool()
+
+def open_ping_window(root):
+    """Open the ping tool window"""
+    ping_win = tk.Toplevel(root)
+    ping_win.title("Ping Tool - Port Checker Plus")
+    ping_win.geometry("445x520")
+    ping_win.configure(bg="#ffffff")
+    ping_win.transient(root)
+    ping_win.grab_set()
+    ping_win.resizable(True, True)
+    set_window_icon(ping_win)
+    
+    # Configure window grid weights
+    ping_win.grid_rowconfigure(1, weight=1)
+    ping_win.grid_columnconfigure(0, weight=1)
+    
+    # Title and input frame
+    input_frame = tk.Frame(ping_win, bg="#ffffff")
+    input_frame.grid(row=0, column=0, sticky="ew", padx=20, pady=(20, 10))
+    input_frame.grid_columnconfigure(1, weight=1)
+    
+    # Ping Tool Section
+    ping_section = tk.LabelFrame(input_frame, text="Ping Tool", 
+                                font=("Segoe UI", 10, "bold"), bg="#ffffff", 
+                                fg="#34495e", padx=15, pady=10)
+    ping_section.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 15))
+    ping_section.grid_columnconfigure(1, weight=1)
+    
+    # Host input
+    tk.Label(ping_section, text="Host/IP:", font=("Segoe UI", 10), 
+             bg="#ffffff", fg="#2c3e50").grid(row=0, column=0, sticky="w", pady=5)
+    host_entry = tk.Entry(ping_section, font=("Segoe UI", 10), width=20)
+    host_entry.grid(row=0, column=1, sticky="w", padx=(10, 10), pady=5)
+    
+    # Count input
+    tk.Label(ping_section, text="Count:", font=("Segoe UI", 10), 
+             bg="#ffffff", fg="#2c3e50").grid(row=1, column=0, sticky="w", pady=5)
+    count_var = tk.StringVar(value="4")
+    count_spin = tk.Spinbox(ping_section, from_=1, to=100, width=10, 
+                           textvariable=count_var, font=("Segoe UI", 10))
+    count_spin.grid(row=1, column=1, sticky="w", padx=(10, 0), pady=5)
+    
+    # Timeout input
+    tk.Label(ping_section, text="Timeout (sec):", font=("Segoe UI", 10), 
+             bg="#ffffff", fg="#2c3e50").grid(row=2, column=0, sticky="w", pady=5)
+    timeout_var = tk.StringVar(value="3")
+    timeout_spin = tk.Spinbox(ping_section, from_=1, to=30, width=10, 
+                             textvariable=timeout_var, font=("Segoe UI", 10))
+    timeout_spin.grid(row=2, column=1, sticky="w", padx=(10, 0), pady=5)
+    
+    # Buttons frame
+    button_frame = tk.Frame(input_frame, bg="#ffffff")
+    button_frame.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(15, 0))
+    
+    # Ping button
+    ping_button = tk.Button(button_frame, text="Start", font=("Segoe UI", 10, "bold"),
+                           bg="#27ae60", fg="white", activebackground="#229954", 
+                           relief="flat", padx=20, pady=8)
+    ping_button.pack(side="left", padx=(0, 10))
+    
+    # Stop button
+    stop_button = tk.Button(button_frame, text="Stop", font=("Segoe UI", 10),
+                           bg="#e74c3c", fg="white", activebackground="#c0392b", 
+                           relief="flat", padx=20, pady=8, state=tk.DISABLED)
+    stop_button.pack(side="left", padx=(0, 10))
+    
+    # Clear button
+    clear_button = tk.Button(button_frame, text="Clear Results", font=("Segoe UI", 10),
+                            bg="#95a5a6", fg="white", activebackground="#7f8c8d", 
+                            relief="flat", padx=20, pady=8, state=tk.DISABLED)
+    clear_button.pack(side="left")
+    
+    # Set Host button (positioned to the right)
+    def set_host_to_main():
+        """Copy the host from ping tool to main window's host entry"""
+        host_text = host_entry.get().strip()
+        if host_text and hasattr(root, 'host_entry'):
+            root.host_entry.delete(0, tk.END)
+            root.host_entry.insert(0, host_text)
+            ping_win.destroy()  # Close the ping window after setting host
+        elif not host_text:
+            messagebox.showwarning("No Host", "Please enter a host/IP address first.")
+        else:
+            messagebox.showerror("Error", "Main window not accessible.")
+    
+    set_host_button = tk.Button(button_frame, text="Set Host", font=("Segoe UI", 10),
+                               bg="#3498db", fg="white", activebackground="#2980b9", 
+                               relief="flat", padx=20, pady=8, command=set_host_to_main)
+    set_host_button.pack(side="right")
+    
+    # Results frame
+    results_frame = tk.Frame(ping_win, bg="#ffffff")
+    results_frame.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 20))
+    results_frame.grid_rowconfigure(1, weight=1)
+    results_frame.grid_columnconfigure(0, weight=1)
+    
+    # Results label
+    results_label = tk.Label(results_frame, text="Results:", 
+                            font=("Segoe UI", 10, "bold"), bg="#ffffff", fg="#2c3e50")
+    results_label.grid(row=0, column=0, sticky="w", pady=(0, 5))
+    
+    # Results text widget with scrollbar
+    text_frame = tk.Frame(results_frame, bg="#ffffff")
+    text_frame.grid(row=1, column=0, sticky="nsew")
+    text_frame.grid_rowconfigure(0, weight=1)
+    text_frame.grid_columnconfigure(0, weight=1)
+    
+    results_text = tk.Text(text_frame, font=("Consolas", 9), bg="#f8f9fa", 
+                          fg="#2c3e50", wrap=tk.WORD, state=tk.DISABLED)
+    results_text.grid(row=0, column=0, sticky="nsew")
+    
+    # Scrollbar for text widget
+    text_scrollbar = ttk.Scrollbar(text_frame, orient="vertical", command=results_text.yview)
+    text_scrollbar.grid(row=0, column=1, sticky="ns")
+    results_text.configure(yscrollcommand=text_scrollbar.set)
+    
+    # Configure text tags for colored output
+    results_text.tag_configure("output", foreground="#2c3e50")
+    results_text.tag_configure("error", foreground="#e74c3c", font=("Consolas", 9, "bold"))
+    results_text.tag_configure("info", foreground="#3498db", font=("Consolas", 9, "italic"))
+    results_text.tag_configure("success", foreground="#27ae60")
+    
+    # Status label
+    status_frame = tk.Frame(ping_win, bg="#ffffff")
+    status_frame.grid(row=2, column=0, sticky="ew", padx=20, pady=(0, 10))
+    
+    status_label = tk.Label(status_frame, text="Ready", font=("Segoe UI", 9), 
+                           bg="#ffffff", fg="#7f8c8d")
+    status_label.pack(side="left")
+    
+    def append_result(text, tag="output"):
+        """Append text to results with specified tag"""
+        results_text.config(state=tk.NORMAL)
+        results_text.insert(tk.END, text, tag)
+        results_text.see(tk.END)
+        results_text.config(state=tk.DISABLED)
+        # Enable clear button when results are added
+        clear_button.config(state=tk.NORMAL)
+        # Update the window to show new text immediately
+        ping_win.update_idletasks()
+    
+    def clear_results():
+        """Clear the results text"""
+        results_text.config(state=tk.NORMAL)
+        results_text.delete(1.0, tk.END)
+        results_text.config(state=tk.DISABLED)
+        # Disable clear button when results are cleared
+        clear_button.config(state=tk.DISABLED)
+        status_label.config(text="Ready")
+    
+    def start_ping():
+        """Start the ping operation"""
+        host = host_entry.get().strip()
+        if not host:
+            messagebox.showwarning("Input Error", "Please enter a host or IP address.")
+            return
+        
+        try:
+            count = int(count_var.get())
+            timeout = int(timeout_var.get())
+        except ValueError:
+            messagebox.showerror("Input Error", "Count and timeout must be valid numbers.")
+            return
+        
+        # Clear previous results and update UI
+        clear_results()
+        ping_button.config(state=tk.DISABLED)
+        stop_button.config(state=tk.NORMAL)
+        status_label.config(text=f"Pinging {host}...")
+        
+        # Add header to results
+        append_result(f"Pinging {host} with {count} packets (timeout: {timeout}s)\n", "info")
+        append_result("-" * 50 + "\n", "info")
+        
+        def ping_callback(text, tag):
+            """Callback function for ping results"""
+            append_result(text, tag)
+        
+        def ping_complete():
+            """Called when ping operation completes"""
+            ping_button.config(state=tk.NORMAL)
+            stop_button.config(state=tk.DISABLED)
+            status_label.config(text="Ping completed")
+        
+        def run_ping():
+            """Run ping in separate thread"""
+            try:
+                ping_tool.ping(host, count, timeout, ping_callback)
+            finally:
+                # Schedule UI update on main thread
+                ping_win.after(0, ping_complete)
+        
+        # Start ping in separate thread
+        threading.Thread(target=run_ping, daemon=True).start()
+    
+    def stop_ping():
+        """Stop the ping operation"""
+        ping_tool.stop_ping()
+        ping_button.config(state=tk.NORMAL)
+        stop_button.config(state=tk.DISABLED)
+        status_label.config(text="Ping stopped")
+        append_result("Ping operation stopped by user\n", "error")
+    
+    # Bind button commands
+    ping_button.config(command=start_ping)
+    stop_button.config(command=stop_ping)
+    clear_button.config(command=clear_results)
+    
+    # Bind Enter key to start ping
+    def on_enter(event):
+        if ping_button['state'] == tk.NORMAL:
+            start_ping()
+    
+    host_entry.bind('<Return>', on_enter)
+    count_spin.bind('<Return>', on_enter)
+    timeout_spin.bind('<Return>', on_enter)
+    
+    # Focus on host entry
+    host_entry.focus_set()
+    
+    # Center the window
+    ping_win.update_idletasks()
+    x = (ping_win.winfo_screenwidth() // 2) - (ping_win.winfo_width() // 2)
+    y = (ping_win.winfo_screenheight() // 2) - (ping_win.winfo_height() // 2)
+    ping_win.geometry(f"+{x}+{y}")
 
 # Port categorization removed - all open ports will be green
 
@@ -2796,6 +3109,11 @@ def run_gui():
     edit_menu = Menu(menubar, tearoff=0)
     edit_menu.add_command(label="⚙️ Settings", command=lambda: open_settings_window(root, config, "Defaults"))
     menubar.add_cascade(label="Edit", menu=edit_menu)
+
+    # Add Tools menu with Ping option
+    tools_menu = Menu(menubar, tearoff=0)
+    tools_menu.add_command(label="🏓 Ping", command=lambda: open_ping_window(root))
+    menubar.add_cascade(label="Tools", menu=tools_menu)
 
     help_menu = Menu(menubar, tearoff=0)
     help_menu.add_command(label="❓Documentation", command=open_documentation)
