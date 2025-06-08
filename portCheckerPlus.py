@@ -997,7 +997,7 @@ class PingGraphWidget:
         """Draw clean axis labels and title"""
         # X-axis label
         self.canvas.create_text(self.width // 2, self.height - 15, 
-                              text="Recent Pings", anchor="center",
+                              text="Pings", anchor="center",
                               fill=self.colors['text'], font=("Segoe UI", 10, "bold"))
     
     def get_x_position(self, index):
@@ -1127,7 +1127,7 @@ class PingGraphWidget:
 def open_ping_window(root):
     """Open the enhanced ping tool window with graph"""
     ping_win = tk.Toplevel(root)
-    ping_win.title("Ping Tool - Port Checker Plus")
+    ping_win.title("Port Checker Plus - Ping")
     ping_win.geometry("650x750")  # Adjusted height for cleaner layout
     ping_win.configure(bg="#ffffff")
     ping_win.transient(root)
