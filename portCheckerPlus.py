@@ -1101,12 +1101,6 @@ class PingGraphWidget:
                     self.canvas.create_text(x, y-20, text=f"{response_time:.1f}ms",
                                           anchor="center", fill=color,
                                           font=("Segoe UI", 9, "bold"))
-        
-        # Draw professional legend
-        # self.draw_legend()  # Removed - not needed
-        
-        # Add current stats summary above title
-        self.draw_stats_summary(recent_data)
     
     def draw_stats_summary(self, recent_data):
         """Draw current session stats on the graph"""
