@@ -19,6 +19,7 @@ import sys
 import struct
 import re  # Added for banner parsing
 import subprocess  # Added for ping functionality
+import math  # Added for graph calculations
 
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
@@ -683,27 +684,44 @@ class FragmentedPacketScanner:
 # Global fragmented scanner instance
 fragmented_scanner = FragmentedPacketScanner()
 
-# Ping Tool Implementation
+# Enhanced Ping Tool Implementation
 class PingTool:
     """
-    Cross-platform ping implementation using subprocess
+    Cross-platform ping implementation using subprocess with visual graph support
     """
     
     def __init__(self):
         self.current_process = None
         self.stop_event = threading.Event()
+        self.ping_count = 0
+        self.continuous_mode = False
+        self.ping_data = []  # Store ping results for graphing
+        self.max_graph_points = 30  # Reduced for cleaner display
+        self.data_lock = threading.Lock()  # Thread safety for ping_data
     
-    def ping(self, host, count=4, timeout=3, callback=None):
+    def ping(self, host, count=4, timeout=3, continuous=False, callback=None):
         """
         Ping a host and return results via callback
         """
         self.stop_event.clear()
+        self.ping_count = 0
+        self.continuous_mode = continuous
+        
+        # Clear ping data thread-safely
+        with self.data_lock:
+            self.ping_data.clear()
         
         # Determine ping command based on operating system
         if platform.system().lower() == "windows":
-            cmd = ["ping", "-n", str(count), "-w", str(timeout * 1000), host]
+            if continuous:
+                cmd = ["ping", "-t", "-w", str(timeout * 1000), host]
+            else:
+                cmd = ["ping", "-n", str(count), "-w", str(timeout * 1000), host]
         else:
-            cmd = ["ping", "-c", str(count), "-W", str(timeout), host]
+            if continuous:
+                cmd = ["ping", "-W", str(timeout), host]
+            else:
+                cmd = ["ping", "-c", str(count), "-W", str(timeout), host]
         
         try:
             # Configure subprocess to hide window on Windows
@@ -723,42 +741,123 @@ class PingTool:
             self.current_process = subprocess.Popen(cmd, **popen_kwargs)
             
             # Read output line by line
-            for line in iter(self.current_process.stdout.readline, ''):
+            while True:
                 if self.stop_event.is_set():
-                    self.current_process.terminate()
-                    if callback:
-                        callback("Ping stopped by user\n", "info")
-                    return
+                    break
                 
-                if line.strip():
-                    if callback:
-                        callback(line.strip() + "\n", "output")
+                try:
+                    # Use poll to check if process is still running
+                    if self.current_process.poll() is not None:
+                        # Process has terminated
+                        break
+                    
+                    # Read line with timeout
+                    line = self.current_process.stdout.readline()
+                    if not line:
+                        # End of output
+                        break
+                    
+                    line = line.strip()
+                    if line:
+                        # Parse ping results for response time
+                        response_time = self._parse_ping_line(line)
+                        
+                        if callback:
+                            # Schedule callback on main thread to avoid UI crashes
+                            callback(line + "\n", "output", response_time)
+                        
+                        self.ping_count += 1
+                        
+                        # In non-continuous mode, check if we've reached the count
+                        if not continuous and self.ping_count >= count:
+                            break
+                
+                except Exception as e:
+                    print(f"Error reading ping output: {e}")
+                    break
             
-            # Wait for process to complete
-            self.current_process.wait()
+            # Clean up process
+            if self.current_process:
+                try:
+                    self.current_process.terminate()
+                    self.current_process.wait(timeout=2)
+                except:
+                    try:
+                        self.current_process.kill()
+                    except:
+                        pass
             
-            # Get any remaining output from stderr
-            stderr_output = self.current_process.stderr.read()
-            if stderr_output and not self.stop_event.is_set():
-                if callback:
-                    callback(f"Error: {stderr_output}\n", "error")
-            
-            # Check return code
-            if self.current_process.returncode != 0 and not self.stop_event.is_set():
-                if callback:
-                    callback(f"Ping failed with exit code: {self.current_process.returncode}\n", "error")
-            elif not self.stop_event.is_set():
-                if callback:
-                    callback("Ping completed successfully\n", "info")
+            # Final callback
+            if callback and not self.stop_event.is_set():
+                callback("Ping completed successfully\n", "info", None)
                     
         except FileNotFoundError:
             if callback:
-                callback("Error: ping command not found\n", "error")
+                callback("Error: ping command not found\n", "error", None)
         except Exception as e:
             if callback:
-                callback(f"Error: {str(e)}\n", "error")
+                callback(f"Error: {str(e)}\n", "error", None)
         finally:
             self.current_process = None
+    
+    def _parse_ping_line(self, line):
+        """Parse ping output line to extract response time"""
+        try:
+            # Common patterns for response time extraction
+            patterns = [
+                r'time[<=](\d+(?:\.\d+)?)ms',  # Windows/Linux format
+                r'time=(\d+(?:\.\d+)?)ms',     # Alternative format
+                r'time:\s*(\d+(?:\.\d+)?)ms',  # Another format
+                r'(\d+(?:\.\d+)?)ms',          # Simple ms extraction
+            ]
+            
+            line_lower = line.lower()
+            for pattern in patterns:
+                match = re.search(pattern, line_lower)
+                if match:
+                    response_time = float(match.group(1))
+                    # Add to ping data for graphing (thread-safe)
+                    timestamp = time.time()
+                    
+                    with self.data_lock:
+                        self.ping_data.append({
+                            'timestamp': timestamp,
+                            'response_time': response_time,
+                            'status': 'success'
+                        })
+                        
+                        # Keep only the last max_graph_points
+                        if len(self.ping_data) > self.max_graph_points:
+                            self.ping_data = self.ping_data[-self.max_graph_points:]
+                    
+                    return response_time
+            
+            # Check for timeout or unreachable
+            if any(keyword in line_lower for keyword in ['timeout', 'unreachable', 'no reply', 'request timed out']):
+                timestamp = time.time()
+                
+                with self.data_lock:
+                    self.ping_data.append({
+                        'timestamp': timestamp,
+                        'response_time': None,
+                        'status': 'timeout'
+                    })
+                    
+                    # Keep only the last max_graph_points
+                    if len(self.ping_data) > self.max_graph_points:
+                        self.ping_data = self.ping_data[-self.max_graph_points:]
+                
+                return None
+                
+        except Exception as e:
+            print(f"Error parsing ping line: {e}")
+        
+        return None
+    
+    def get_ping_data(self):
+        """Get current ping data for graphing (thread-safe)"""
+        with self.data_lock:
+            return self.ping_data.copy()
     
     def stop_ping(self):
         """Stop the current ping operation"""
@@ -766,8 +865,15 @@ class PingTool:
         if self.current_process:
             try:
                 self.current_process.terminate()
-                self.current_process.wait(timeout=2)
-            except:
+                # Give it a moment to terminate gracefully
+                try:
+                    self.current_process.wait(timeout=1)
+                except subprocess.TimeoutExpired:
+                    # Force kill if it doesn't terminate
+                    self.current_process.kill()
+                    self.current_process.wait(timeout=1)
+            except Exception as e:
+                print(f"Error stopping ping process: {e}")
                 try:
                     self.current_process.kill()
                 except:
@@ -776,11 +882,259 @@ class PingTool:
 # Global ping tool instance
 ping_tool = PingTool()
 
+# Ping Graph Widget
+class PingGraphWidget:
+    """
+    Custom widget for displaying ping response times as a colorful graph
+    """
+    
+    def __init__(self, parent, width=600, height=200):
+        self.parent = parent
+        self.width = width
+        self.height = height
+        
+        # Create canvas for drawing
+        self.canvas = tk.Canvas(parent, width=width, height=height, bg="#ffffff", 
+                               highlightthickness=1, highlightbackground="#e1e8ed")
+        
+        # Graph settings - clean and minimal
+        self.margin_left = 50
+        self.margin_right = 30
+        self.margin_top = 35  # Reduced since no stats above title
+        self.margin_bottom = 35
+        self.graph_width = self.width - self.margin_left - self.margin_right
+        self.graph_height = self.height - self.margin_top - self.margin_bottom
+        
+        # Data settings
+        self.max_points = 30  # Reduced for cleaner display
+        self.max_time = 200  # Maximum response time to display (ms)
+        self.min_time = 0
+        
+        # Professional color scheme
+        self.colors = {
+            'excellent': '#10b981',    # Modern green
+            'good': '#22c55e',         # Light green
+            'fair': '#f59e0b',         # Amber
+            'poor': '#f97316',         # Orange
+            'bad': '#ef4444',          # Modern red
+            'timeout': '#6b7280',      # Cool gray
+            'grid_major': '#e5e7eb',   # Light gray for major grid
+            'grid_minor': '#f3f4f6',   # Very light gray for minor grid
+            'axis': '#374151',         # Dark gray for axes
+            'text': '#1f2937',         # Almost black for text
+            'background': '#f9fafb',   # Very light background
+            'plot_area': '#ffffff',    # White plot area
+            'line': '#6366f1'          # Indigo for connecting lines
+        }
+        
+        self.draw_static_elements()
+    
+    def get_widget(self):
+        """Return the canvas widget"""
+        return self.canvas
+    
+    def draw_static_elements(self):
+        """Draw the static elements of the graph (axes, labels, grid)"""
+        self.canvas.delete("all")
+        
+        # Draw background
+        self.canvas.create_rectangle(0, 0, self.width, self.height, 
+                                   fill=self.colors['background'], outline="")
+        
+        # Draw graph area background
+        graph_x1 = self.margin_left
+        graph_y1 = self.margin_top
+        graph_x2 = self.margin_left + self.graph_width
+        graph_y2 = self.margin_top + self.graph_height
+        
+        self.canvas.create_rectangle(graph_x1, graph_y1, graph_x2, graph_y2,
+                                   fill=self.colors['plot_area'], outline=self.colors['axis'], width=2)
+        
+        # Draw grid lines
+        self.draw_grid()
+        
+        # Draw axes labels
+        self.draw_labels()
+    
+    def draw_grid(self):
+        """Draw professional grid lines"""
+        # Major horizontal grid lines (response time) - cleaner intervals
+        major_intervals = [0, 50, 100, 150, 200]
+        minor_intervals = [25, 75, 125, 175]
+        
+        # Draw minor grid lines first (lighter)
+        for time_val in minor_intervals:
+            if time_val <= self.max_time:
+                y = self.get_y_position(time_val)
+                self.canvas.create_line(self.margin_left + 1, y, 
+                                      self.margin_left + self.graph_width - 1, y,
+                                      fill=self.colors['grid_minor'], width=1)
+        
+        # Draw major grid lines
+        for time_val in major_intervals:
+            if time_val <= self.max_time:
+                y = self.get_y_position(time_val)
+                self.canvas.create_line(self.margin_left + 1, y, 
+                                      self.margin_left + self.graph_width - 1, y,
+                                      fill=self.colors['grid_major'], width=1)
+                
+                # Y-axis labels - adjusted for reduced left margin
+                label_text = f"{time_val}" if time_val == 0 else f"{time_val}ms"
+                self.canvas.create_text(self.margin_left - 10, y, 
+                                      text=label_text, anchor="e",
+                                      fill=self.colors['text'], font=("Segoe UI", 9))
+        
+        # Vertical grid lines (time axis) - fewer lines, better spacing
+        x_intervals = [0, 10, 20, 30] if self.max_points >= 30 else [0, self.max_points//2, self.max_points-1]
+        for i in x_intervals:
+            if i < self.max_points:
+                x = self.get_x_position(i)
+                self.canvas.create_line(x, self.margin_top + 1, 
+                                      x, self.margin_top + self.graph_height - 1,
+                                      fill=self.colors['grid_minor'], width=1)
+    
+    def draw_labels(self):
+        """Draw clean axis labels and title"""
+        # X-axis label
+        self.canvas.create_text(self.width // 2, self.height - 15, 
+                              text="Recent Pings", anchor="center",
+                              fill=self.colors['text'], font=("Segoe UI", 10, "bold"))
+    
+    def get_x_position(self, index):
+        """Convert ping index to x coordinate"""
+        if self.max_points <= 1:
+            return self.margin_left + self.graph_width // 2
+        x = self.margin_left + (index / (self.max_points - 1)) * self.graph_width
+        return max(self.margin_left, min(self.margin_left + self.graph_width, x))
+    
+    def get_y_position(self, response_time):
+        """Convert response time to y coordinate"""
+        if response_time is None:  # Timeout
+            return self.margin_top + self.graph_height - 15  # Near bottom
+        
+        # Clamp response time to display range
+        clamped_time = max(self.min_time, min(response_time, self.max_time))
+        
+        # Convert to y coordinate (flip because y increases downward)
+        ratio = (clamped_time - self.min_time) / (self.max_time - self.min_time)
+        y = self.margin_top + self.graph_height - (ratio * self.graph_height)
+        return y
+    
+    def get_color_for_response_time(self, response_time):
+        """Get color based on response time"""
+        if response_time is None:
+            return self.colors['timeout']
+        elif response_time < 20:
+            return self.colors['excellent']
+        elif response_time < 50:
+            return self.colors['good']
+        elif response_time < 100:
+            return self.colors['fair']
+        elif response_time < 150:
+            return self.colors['poor']
+        else:
+            return self.colors['bad']
+    
+    def update_graph(self, ping_data):
+        """Update the graph with new ping data"""
+        # Redraw static elements
+        self.draw_static_elements()
+        
+        if not ping_data:
+            # Show empty state message - centered in graph area
+            empty_x = self.margin_left + self.graph_width // 2
+            empty_y = self.margin_top + self.graph_height // 2
+            self.canvas.create_text(empty_x, empty_y, 
+                                  text="No ping data yet...", anchor="center",
+                                  fill=self.colors['timeout'], font=("Segoe UI", 11, "italic"))
+            return
+        
+        # Prepare data points
+        points = []
+        colors = []
+        
+        # Take the last max_points data points
+        recent_data = ping_data[-self.max_points:] if len(ping_data) > self.max_points else ping_data
+        
+        for i, data_point in enumerate(recent_data):
+            response_time = data_point.get('response_time')
+            x = self.get_x_position(i)
+            y = self.get_y_position(response_time)
+            color = self.get_color_for_response_time(response_time)
+            
+            points.append((x, y, response_time))
+            colors.append(color)
+        
+        # Draw smooth connecting lines between successful pings
+        successful_points = [(x, y) for x, y, rt in points if rt is not None]
+        if len(successful_points) > 1:
+            # Create smooth line through successful points
+            line_coords = []
+            for x, y in successful_points:
+                line_coords.extend([x, y])
+            
+            if len(line_coords) >= 4:  # Need at least 2 points
+                self.canvas.create_line(line_coords, 
+                                      fill=self.colors['line'], width=3, 
+                                      smooth=True, capstyle='round', joinstyle='round')
+        
+        # Draw data points with better styling
+        for i, ((x, y, response_time), color) in enumerate(zip(points, colors)):
+            if response_time is None:
+                # Draw styled X for timeout
+                size = 5
+                self.canvas.create_line(x-size, y-size, x+size, y+size, 
+                                      fill=color, width=4, capstyle='round')
+                self.canvas.create_line(x-size, y+size, x+size, y-size, 
+                                      fill=color, width=4, capstyle='round')
+                # Add timeout indicator
+                self.canvas.create_text(x, y+15, text="timeout", anchor="center",
+                                      fill=color, font=("Segoe UI", 8))
+            else:
+                # Draw styled circle for successful ping
+                radius = 5
+                self.canvas.create_oval(x-radius, y-radius, x+radius, y+radius,
+                                      fill=color, outline="white", width=2)
+                
+                # Only show response time for the most recent point to avoid clutter
+                if i == len(points) - 1 and len(points) > 1:
+                    self.canvas.create_text(x, y-20, text=f"{response_time:.1f}ms",
+                                          anchor="center", fill=color,
+                                          font=("Segoe UI", 9, "bold"))
+        
+        # Draw professional legend
+        # self.draw_legend()  # Removed - not needed
+        
+        # Add current stats summary above title
+        self.draw_stats_summary(recent_data)
+    
+    def draw_stats_summary(self, recent_data):
+        """Draw current session stats on the graph"""
+        if not recent_data:
+            return
+        
+        # Calculate stats
+        successful_pings = [d['response_time'] for d in recent_data if d['response_time'] is not None]
+        timeout_count = len([d for d in recent_data if d['response_time'] is None])
+        
+        if successful_pings:
+            avg_time = sum(successful_pings) / len(successful_pings)
+            min_time = min(successful_pings)
+            max_time = max(successful_pings)
+            
+            # Position stats in bottom-left of graph area
+            stats_x = self.margin_left + 15
+            stats_y = self.margin_top + self.graph_height - 45
+            
+            # Draw semi-transparent background
+            self.canvas.create_rectangle(stats_x - 10, stats_y - 5, stats_x + 200, stats_y + 30,
+                                       fill="white", outline=self.colors['grid_major'], width=1)
+
 def open_ping_window(root):
-    """Open the ping tool window"""
+    """Open the enhanced ping tool window with graph"""
     ping_win = tk.Toplevel(root)
     ping_win.title("Ping Tool - Port Checker Plus")
-    ping_win.geometry("510x510")
+    ping_win.geometry("650x750")  # Adjusted height for cleaner layout
     ping_win.configure(bg="#ffffff")
     ping_win.transient(root)
     ping_win.grab_set()
@@ -788,14 +1142,21 @@ def open_ping_window(root):
     set_window_icon(ping_win)
     
     # Configure window grid weights
-    ping_win.grid_rowconfigure(1, weight=1)
+    ping_win.grid_rowconfigure(2, weight=1)  # Results area gets most space
+    ping_win.grid_rowconfigure(3, weight=0)  # Graph gets fixed space
     ping_win.grid_columnconfigure(0, weight=1)
     
     # Add window close handler to stop ping when window is closed
     def on_window_close():
         """Handle window closing - stop ping and destroy window"""
-        ping_tool.stop_ping()
-        ping_win.destroy()
+        try:
+            ping_tool.stop_ping()
+            # Give a moment for cleanup
+            time.sleep(0.1)
+        except:
+            pass
+        finally:
+            ping_win.destroy()
     
     ping_win.protocol("WM_DELETE_WINDOW", on_window_close)
     
@@ -817,13 +1178,33 @@ def open_ping_window(root):
     host_entry = tk.Entry(ping_section, font=("Segoe UI", 10), width=20)
     host_entry.grid(row=0, column=1, sticky="w", padx=(10, 10), pady=5)
     
-    # Count input
-    tk.Label(ping_section, text="Count:", font=("Segoe UI", 10), 
-             bg="#ffffff", fg="#2c3e50").grid(row=1, column=0, sticky="w", pady=5)
+    # Count input and continuous checkbox
+    count_frame = tk.Frame(ping_section, bg="#ffffff")
+    count_frame.grid(row=1, column=0, columnspan=2, sticky="w", pady=5)
+    
+    tk.Label(count_frame, text="Count:", font=("Segoe UI", 10), 
+             bg="#ffffff", fg="#2c3e50").pack(side="left")
     count_var = tk.StringVar(value="4")
-    count_spin = tk.Spinbox(ping_section, from_=1, to=100, width=10, 
+    count_spin = tk.Spinbox(count_frame, from_=1, to=100, width=10, 
                            textvariable=count_var, font=("Segoe UI", 10))
-    count_spin.grid(row=1, column=1, sticky="w", padx=(10, 0), pady=5)
+    count_spin.pack(side="left", padx=(10, 15))
+    
+    # Continuous ping checkbox
+    continuous_var = tk.BooleanVar()
+    continuous_check = tk.Checkbutton(count_frame, text="Continuous ping", 
+                                     variable=continuous_var, bg="#ffffff", 
+                                     font=("Segoe UI", 10), fg="#2c3e50",
+                                     activebackground="#ffffff")
+    continuous_check.pack(side="left")
+    
+    def on_continuous_toggle():
+        """Handle continuous checkbox toggle"""
+        if continuous_var.get():
+            count_spin.config(state="disabled")
+        else:
+            count_spin.config(state="normal")
+    
+    continuous_check.config(command=on_continuous_toggle)
     
     # Timeout input
     tk.Label(ping_section, text="Timeout (sec):", font=("Segoe UI", 10), 
@@ -878,9 +1259,17 @@ def open_ping_window(root):
                                relief="flat", padx=20, pady=8, command=set_host_to_main)
     set_host_button.pack(side="right")
     
+    # Statistics frame
+    stats_frame = tk.Frame(input_frame, bg="#ffffff")
+    stats_frame.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(10, 0))
+    
+    stats_label = tk.Label(stats_frame, text="Statistics: Ready", 
+                          font=("Segoe UI", 9), bg="#ffffff", fg="#7f8c8d")
+    stats_label.pack(anchor="w")
+    
     # Results frame
     results_frame = tk.Frame(ping_win, bg="#ffffff")
-    results_frame.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 20))
+    results_frame.grid(row=2, column=0, sticky="nsew", padx=20, pady=(0, 10))
     results_frame.grid_rowconfigure(1, weight=1)
     results_frame.grid_columnconfigure(0, weight=1)
     
@@ -896,7 +1285,7 @@ def open_ping_window(root):
     text_frame.grid_columnconfigure(0, weight=1)
     
     results_text = tk.Text(text_frame, font=("Consolas", 9), bg="#f8f9fa", 
-                          fg="#2c3e50", wrap=tk.WORD, state=tk.DISABLED)
+                          fg="#2c3e50", wrap=tk.WORD, state=tk.DISABLED, height=12)
     results_text.grid(row=0, column=0, sticky="nsew")
     
     # Scrollbar for text widget
@@ -910,16 +1299,64 @@ def open_ping_window(root):
     results_text.tag_configure("info", foreground="#3498db", font=("Consolas", 9, "italic"))
     results_text.tag_configure("success", foreground="#27ae60")
     
+    # Graph frame
+    graph_frame = tk.LabelFrame(ping_win, text="Network Latency Monitor", 
+                               font=("Segoe UI", 10, "bold"), bg="#ffffff", 
+                               fg="#34495e", padx=10, pady=10)
+    graph_frame.grid(row=3, column=0, sticky="ew", padx=20, pady=(0, 10))
+    
+    # Create ping graph widget
+    ping_graph = PingGraphWidget(graph_frame, width=600, height=200)
+    ping_graph.get_widget().pack(pady=5)
+    
     # Status label
     status_frame = tk.Frame(ping_win, bg="#ffffff")
-    status_frame.grid(row=2, column=0, sticky="ew", padx=20, pady=(0, 10))
+    status_frame.grid(row=4, column=0, sticky="ew", padx=20, pady=(0, 10))
     
     status_label = tk.Label(status_frame, text="Ready", font=("Segoe UI", 9), 
                            bg="#ffffff", fg="#7f8c8d")
     status_label.pack(side="left")
     
-    def append_result(text, tag="output"):
-        """Append text to results with specified tag"""
+    # Statistics tracking
+    ping_stats = {
+        'sent': 0,
+        'received': 0,
+        'lost': 0,
+        'min_time': float('inf'),
+        'max_time': 0,
+        'total_time': 0,
+        'avg_time': 0
+    }
+    
+    def update_statistics(response_time):
+        """Update ping statistics"""
+        ping_stats['sent'] += 1
+        
+        if response_time is not None:
+            ping_stats['received'] += 1
+            ping_stats['min_time'] = min(ping_stats['min_time'], response_time)
+            ping_stats['max_time'] = max(ping_stats['max_time'], response_time)
+            ping_stats['total_time'] += response_time
+            ping_stats['avg_time'] = ping_stats['total_time'] / ping_stats['received']
+        else:
+            ping_stats['lost'] += 1
+        
+        # Calculate packet loss percentage
+        loss_percent = (ping_stats['lost'] / ping_stats['sent']) * 100 if ping_stats['sent'] > 0 else 0
+        
+        # Update statistics display
+        if ping_stats['received'] > 0:
+            stats_text = (f"Sent: {ping_stats['sent']}, Received: {ping_stats['received']}, "
+                         f"Lost: {ping_stats['lost']} ({loss_percent:.1f}% loss) | "
+                         f"Min: {ping_stats['min_time']:.1f}ms, Max: {ping_stats['max_time']:.1f}ms, "
+                         f"Avg: {ping_stats['avg_time']:.1f}ms")
+        else:
+            stats_text = f"Sent: {ping_stats['sent']}, Received: 0, Lost: {ping_stats['lost']} (100% loss)"
+        
+        stats_label.config(text=f"Statistics: {stats_text}")
+    
+    def append_result(text, tag="output", response_time=None):
+        """Append text to results with specified tag and update graph"""
         try:
             # Check if the widget still exists before trying to modify it
             if results_text.winfo_exists():
@@ -933,12 +1370,26 @@ def open_ping_window(root):
                 # Update the window to show new text immediately
                 if ping_win.winfo_exists():
                     ping_win.update_idletasks()
+                
+                # Update statistics and graph if this is a ping result
+                if tag == "output" and ("time" in text.lower() or "timeout" in text.lower() or "unreachable" in text.lower()):
+                    update_statistics(response_time)
+                    
+                    # Update graph with current ping data
+                    ping_data = ping_tool.get_ping_data()
+                    ping_graph.update_graph(ping_data)
+                    
         except tk.TclError:
             # Widget has been destroyed, ignore the update
             pass
     
+    def safe_append_result(text, tag="output", response_time=None):
+        """Thread-safe wrapper for append_result"""
+        if ping_win.winfo_exists():
+            ping_win.after(0, lambda: append_result(text, tag, response_time))
+    
     def clear_results():
-        """Clear the results text"""
+        """Clear the results text and reset statistics"""
         try:
             if results_text.winfo_exists():
                 results_text.config(state=tk.NORMAL)
@@ -949,6 +1400,22 @@ def open_ping_window(root):
                     clear_button.config(state=tk.DISABLED)
                 if status_label.winfo_exists():
                     status_label.config(text="Ready")
+                
+                # Reset statistics
+                ping_stats.update({
+                    'sent': 0, 'received': 0, 'lost': 0,
+                    'min_time': float('inf'), 'max_time': 0,
+                    'total_time': 0, 'avg_time': 0
+                })
+                stats_label.config(text="Statistics: Ready")
+                
+                # Clear ping data thread-safely
+                with ping_tool.data_lock:
+                    ping_tool.ping_data.clear()
+                
+                # Clear graph
+                ping_graph.update_graph([])
+                
         except tk.TclError:
             # Widget has been destroyed, ignore the update
             pass
@@ -961,8 +1428,9 @@ def open_ping_window(root):
             return
         
         try:
-            count = int(count_var.get())
+            count = int(count_var.get()) if not continuous_var.get() else 0
             timeout = int(timeout_var.get())
+            continuous = continuous_var.get()
         except ValueError:
             messagebox.showerror("Input Error", "Count and timeout must be valid numbers.")
             return
@@ -971,36 +1439,48 @@ def open_ping_window(root):
         clear_results()
         ping_button.config(state=tk.DISABLED)
         stop_button.config(state=tk.NORMAL)
-        status_label.config(text=f"Pinging {host}...")
         
-        # Add header to results
-        append_result(f"Pinging {host} with {count} packets (timeout: {timeout}s)\n", "info")
+        if continuous:
+            status_label.config(text=f"Pinging {host} continuously...")
+            append_result(f"Pinging {host} continuously (press Stop to end)\n", "info")
+        else:
+            status_label.config(text=f"Pinging {host}...")
+            append_result(f"Pinging {host} with {count} packets (timeout: {timeout}s)\n", "info")
+        
         append_result("-" * 50 + "\n", "info")
         
-        def ping_callback(text, tag):
-            """Callback function for ping results"""
-            append_result(text, tag)
+        def ping_callback(text, tag, response_time):
+            """Callback function for ping results - thread-safe"""
+            safe_append_result(text, tag, response_time)
         
         def ping_complete():
-            """Called when ping operation completes"""
-            try:
-                if ping_button.winfo_exists():
-                    ping_button.config(state=tk.NORMAL)
-                if stop_button.winfo_exists():
-                    stop_button.config(state=tk.DISABLED)
-                if status_label.winfo_exists():
-                    status_label.config(text="Ping completed")
-            except tk.TclError:
-                # Widget has been destroyed, ignore the update
-                pass
+            """Called when ping operation completes - thread-safe"""
+            def update_ui():
+                try:
+                    if ping_button.winfo_exists():
+                        ping_button.config(state=tk.NORMAL)
+                    if stop_button.winfo_exists():
+                        stop_button.config(state=tk.DISABLED)
+                    if status_label.winfo_exists():
+                        status_label.config(text="Ping completed")
+                except tk.TclError:
+                    # Widget has been destroyed, ignore the update
+                    pass
+            
+            if ping_win.winfo_exists():
+                ping_win.after(0, update_ui)
         
         def run_ping():
             """Run ping in separate thread"""
             try:
-                ping_tool.ping(host, count, timeout, ping_callback)
+                ping_tool.ping(host, count, timeout, continuous, ping_callback)
+            except Exception as e:
+                # Handle any unexpected errors
+                safe_append_result(f"Ping error: {str(e)}\n", "error")
             finally:
                 # Schedule UI update on main thread
-                ping_win.after(0, ping_complete)
+                if ping_win.winfo_exists():
+                    ping_win.after(0, ping_complete)
         
         # Start ping in separate thread
         threading.Thread(target=run_ping, daemon=True).start()
@@ -1008,17 +1488,22 @@ def open_ping_window(root):
     def stop_ping():
         """Stop the ping operation"""
         ping_tool.stop_ping()
-        try:
-            if ping_button.winfo_exists():
-                ping_button.config(state=tk.NORMAL)
-            if stop_button.winfo_exists():
-                stop_button.config(state=tk.DISABLED)
-            if status_label.winfo_exists():
-                status_label.config(text="Ping stopped")
-        except tk.TclError:
-            # Widget has been destroyed, ignore the update
-            pass
-        append_result("Ping operation stopped by user\n", "error")
+        
+        def update_ui():
+            try:
+                if ping_button.winfo_exists():
+                    ping_button.config(state=tk.NORMAL)
+                if stop_button.winfo_exists():
+                    stop_button.config(state=tk.DISABLED)
+                if status_label.winfo_exists():
+                    status_label.config(text="Ping stopped")
+            except tk.TclError:
+                # Widget has been destroyed, ignore the update
+                pass
+        
+        if ping_win.winfo_exists():
+            ping_win.after(0, update_ui)
+            safe_append_result("Ping operation stopped by user\n", "error")
     
     # Bind button commands
     ping_button.config(command=start_ping)
