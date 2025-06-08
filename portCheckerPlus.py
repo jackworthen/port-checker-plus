@@ -1128,7 +1128,7 @@ def open_ping_window(root):
     """Open the enhanced ping tool window with graph"""
     ping_win = tk.Toplevel(root)
     ping_win.title("Port Checker Plus - Ping")
-    ping_win.geometry("650x750")  # Adjusted height for cleaner layout
+    ping_win.geometry("650x800")  # Adjusted height for cleaner layout
     ping_win.configure(bg="#ffffff")
     ping_win.transient(root)
     ping_win.grab_set()
@@ -1167,10 +1167,13 @@ def open_ping_window(root):
     ping_section.grid_columnconfigure(1, weight=1)
     
     # Host input
-    tk.Label(ping_section, text="Host/IP:", font=("Segoe UI", 10), 
-             bg="#ffffff", fg="#2c3e50").grid(row=0, column=0, sticky="w", pady=5)
-    host_entry = tk.Entry(ping_section, font=("Segoe UI", 10), width=20)
-    host_entry.grid(row=0, column=1, sticky="w", padx=(10, 10), pady=5)
+    host_frame = tk.Frame(ping_section, bg="#ffffff")
+    host_frame.grid(row=0, column=0, columnspan=2, sticky="w", pady=5)
+
+    tk.Label(host_frame, text="Host/IP:", font=("Segoe UI", 10), 
+         bg="#ffffff", fg="#2c3e50").pack(side="left")
+    host_entry = tk.Entry(host_frame, font=("Segoe UI", 10), width=20)
+    host_entry.pack(side="left", padx=(2, 0))
     
     # Count input and continuous checkbox
     count_frame = tk.Frame(ping_section, bg="#ffffff")
