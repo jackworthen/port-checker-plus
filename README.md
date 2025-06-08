@@ -345,33 +345,6 @@ Access additional utilities via **Tools**:
 
 ---
 
-## 🤝 Contributing
-
-We welcome contributions! Here's how you can help:
-
-### 🐛 **Bug Reports**
-- Use the [Issues](https://github.com/jackworthen/port-checker-plus/issues) tab
-- Include your OS, Python version, privilege level, and steps to reproduce
-- For fragmented scanning issues, specify if admin privileges were used
-- For ping tool issues, include target host and network configuration
-
-### 🔧 **Pull Requests**
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature-name`
-3. Make your changes with clear commit messages
-4. Test thoroughly (especially with different thread counts and privilege levels)
-5. Submit a pull request
-
-### 💡 **Feature Ideas**
-- 🚀 Additional performance optimizations
-- 🎨 UI/UX improvements
-- 📊 New export formats
-- 🔒 Enhanced security and stealth features
-- 🧩 Additional evasion techniques
-- 🏓 Enhanced network testing tools
-
----
-
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
