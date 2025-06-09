@@ -687,7 +687,7 @@ fragmented_scanner = FragmentedPacketScanner()
 # Enhanced Ping Tool Implementation
 class PingTool:
     """
-    Cross-platform ping implementation using subprocess with visual graph support
+    Cross-platform ping implementation using subprocess
     """
     
     def __init__(self):
@@ -695,9 +695,6 @@ class PingTool:
         self.stop_event = threading.Event()
         self.ping_count = 0
         self.continuous_mode = False
-        self.ping_data = []  # Store ping results for graphing
-        self.max_graph_points = 30  # Reduced for cleaner display
-        self.data_lock = threading.Lock()  # Thread safety for ping_data
     
     def ping(self, host, count=4, timeout=3, continuous=False, callback=None):
         """
@@ -706,10 +703,6 @@ class PingTool:
         self.stop_event.clear()
         self.ping_count = 0
         self.continuous_mode = continuous
-        
-        # Clear ping data thread-safely
-        with self.data_lock:
-            self.ping_data.clear()
         
         # Determine ping command based on operating system
         if platform.system().lower() == "windows":
@@ -816,48 +809,16 @@ class PingTool:
                 match = re.search(pattern, line_lower)
                 if match:
                     response_time = float(match.group(1))
-                    # Add to ping data for graphing (thread-safe)
-                    timestamp = time.time()
-                    
-                    with self.data_lock:
-                        self.ping_data.append({
-                            'timestamp': timestamp,
-                            'response_time': response_time,
-                            'status': 'success'
-                        })
-                        
-                        # Keep only the last max_graph_points
-                        if len(self.ping_data) > self.max_graph_points:
-                            self.ping_data = self.ping_data[-self.max_graph_points:]
-                    
                     return response_time
             
             # Check for timeout or unreachable
             if any(keyword in line_lower for keyword in ['timeout', 'unreachable', 'no reply', 'request timed out']):
-                timestamp = time.time()
-                
-                with self.data_lock:
-                    self.ping_data.append({
-                        'timestamp': timestamp,
-                        'response_time': None,
-                        'status': 'timeout'
-                    })
-                    
-                    # Keep only the last max_graph_points
-                    if len(self.ping_data) > self.max_graph_points:
-                        self.ping_data = self.ping_data[-self.max_graph_points:]
-                
                 return None
                 
         except Exception as e:
             print(f"Error parsing ping line: {e}")
         
         return None
-    
-    def get_ping_data(self):
-        """Get current ping data for graphing (thread-safe)"""
-        with self.data_lock:
-            return self.ping_data.copy()
     
     def stop_ping(self):
         """Stop the current ping operation"""
@@ -882,253 +843,11 @@ class PingTool:
 # Global ping tool instance
 ping_tool = PingTool()
 
-# Ping Graph Widget
-class PingGraphWidget:
-    """
-    Custom widget for displaying ping response times as a colorful graph
-    """
-    
-    def __init__(self, parent, width=600, height=200):
-        self.parent = parent
-        self.width = width
-        self.height = height
-        
-        # Create canvas for drawing
-        self.canvas = tk.Canvas(parent, width=width, height=height, bg="#ffffff", 
-                               highlightthickness=1, highlightbackground="#e1e8ed")
-        
-        # Graph settings - clean and minimal
-        self.margin_left = 50
-        self.margin_right = 30
-        self.margin_top = 35  # Reduced since no stats above title
-        self.margin_bottom = 35
-        self.graph_width = self.width - self.margin_left - self.margin_right
-        self.graph_height = self.height - self.margin_top - self.margin_bottom
-        
-        # Data settings
-        self.max_points = 30  # Reduced for cleaner display
-        self.max_time = 200  # Maximum response time to display (ms)
-        self.min_time = 0
-        
-        # Professional color scheme
-        self.colors = {
-            'excellent': '#10b981',    # Modern green
-            'good': '#22c55e',         # Light green
-            'fair': '#f59e0b',         # Amber
-            'poor': '#f97316',         # Orange
-            'bad': '#ef4444',          # Modern red
-            'timeout': '#6b7280',      # Cool gray
-            'grid_major': '#e5e7eb',   # Light gray for major grid
-            'grid_minor': '#f3f4f6',   # Very light gray for minor grid
-            'axis': '#374151',         # Dark gray for axes
-            'text': '#1f2937',         # Almost black for text
-            'background': '#f9fafb',   # Very light background
-            'plot_area': '#ffffff',    # White plot area
-            'line': '#6366f1'          # Indigo for connecting lines
-        }
-        
-        self.draw_static_elements()
-    
-    def get_widget(self):
-        """Return the canvas widget"""
-        return self.canvas
-    
-    def draw_static_elements(self):
-        """Draw the static elements of the graph (axes, labels, grid)"""
-        self.canvas.delete("all")
-        
-        # Draw background
-        self.canvas.create_rectangle(0, 0, self.width, self.height, 
-                                   fill=self.colors['background'], outline="")
-        
-        # Draw graph area background
-        graph_x1 = self.margin_left
-        graph_y1 = self.margin_top
-        graph_x2 = self.margin_left + self.graph_width
-        graph_y2 = self.margin_top + self.graph_height
-        
-        self.canvas.create_rectangle(graph_x1, graph_y1, graph_x2, graph_y2,
-                                   fill=self.colors['plot_area'], outline=self.colors['axis'], width=2)
-        
-        # Draw grid lines
-        self.draw_grid()
-        
-        # Draw axes labels
-        self.draw_labels()
-    
-    def draw_grid(self):
-        """Draw professional grid lines"""
-        # Major horizontal grid lines (response time) - cleaner intervals
-        major_intervals = [0, 50, 100, 150, 200]
-        minor_intervals = [25, 75, 125, 175]
-        
-        # Draw minor grid lines first (lighter)
-        for time_val in minor_intervals:
-            if time_val <= self.max_time:
-                y = self.get_y_position(time_val)
-                self.canvas.create_line(self.margin_left + 1, y, 
-                                      self.margin_left + self.graph_width - 1, y,
-                                      fill=self.colors['grid_minor'], width=1)
-        
-        # Draw major grid lines
-        for time_val in major_intervals:
-            if time_val <= self.max_time:
-                y = self.get_y_position(time_val)
-                self.canvas.create_line(self.margin_left + 1, y, 
-                                      self.margin_left + self.graph_width - 1, y,
-                                      fill=self.colors['grid_major'], width=1)
-                
-                # Y-axis labels - adjusted for reduced left margin
-                label_text = f"{time_val}" if time_val == 0 else f"{time_val}ms"
-                self.canvas.create_text(self.margin_left - 10, y, 
-                                      text=label_text, anchor="e",
-                                      fill=self.colors['text'], font=("Segoe UI", 9))
-        
-        # Vertical grid lines (time axis) - fewer lines, better spacing
-        x_intervals = [0, 10, 20, 30] if self.max_points >= 30 else [0, self.max_points//2, self.max_points-1]
-        for i in x_intervals:
-            if i < self.max_points:
-                x = self.get_x_position(i)
-                self.canvas.create_line(x, self.margin_top + 1, 
-                                      x, self.margin_top + self.graph_height - 1,
-                                      fill=self.colors['grid_minor'], width=1)
-    
-    def draw_labels(self):
-        """Draw clean axis labels and title"""
-        # X-axis label
-        self.canvas.create_text(self.width // 2, self.height - 15, 
-                              text="Pings", anchor="center",
-                              fill=self.colors['text'], font=("Segoe UI", 10, "bold"))
-    
-    def get_x_position(self, index):
-        """Convert ping index to x coordinate"""
-        if self.max_points <= 1:
-            return self.margin_left + self.graph_width // 2
-        x = self.margin_left + (index / (self.max_points - 1)) * self.graph_width
-        return max(self.margin_left, min(self.margin_left + self.graph_width, x))
-    
-    def get_y_position(self, response_time):
-        """Convert response time to y coordinate"""
-        if response_time is None:  # Timeout
-            return self.margin_top + self.graph_height - 15  # Near bottom
-        
-        # Clamp response time to display range
-        clamped_time = max(self.min_time, min(response_time, self.max_time))
-        
-        # Convert to y coordinate (flip because y increases downward)
-        ratio = (clamped_time - self.min_time) / (self.max_time - self.min_time)
-        y = self.margin_top + self.graph_height - (ratio * self.graph_height)
-        return y
-    
-    def get_color_for_response_time(self, response_time):
-        """Get color based on response time"""
-        if response_time is None:
-            return self.colors['timeout']
-        elif response_time < 20:
-            return self.colors['excellent']
-        elif response_time < 50:
-            return self.colors['good']
-        elif response_time < 100:
-            return self.colors['fair']
-        elif response_time < 150:
-            return self.colors['poor']
-        else:
-            return self.colors['bad']
-    
-    def update_graph(self, ping_data):
-        """Update the graph with new ping data"""
-        # Redraw static elements
-        self.draw_static_elements()
-        
-        if not ping_data:
-            # Show empty state message - centered in graph area
-            empty_x = self.margin_left + self.graph_width // 2
-            empty_y = self.margin_top + self.graph_height // 2
-            self.canvas.create_text(empty_x, empty_y, 
-                                  text="No ping data yet...", anchor="center",
-                                  fill=self.colors['timeout'], font=("Segoe UI", 11, "italic"))
-            return
-        
-        # Prepare data points
-        points = []
-        colors = []
-        
-        # Take the last max_points data points
-        recent_data = ping_data[-self.max_points:] if len(ping_data) > self.max_points else ping_data
-        
-        for i, data_point in enumerate(recent_data):
-            response_time = data_point.get('response_time')
-            x = self.get_x_position(i)
-            y = self.get_y_position(response_time)
-            color = self.get_color_for_response_time(response_time)
-            
-            points.append((x, y, response_time))
-            colors.append(color)
-        
-        # Draw smooth connecting lines between successful pings
-        successful_points = [(x, y) for x, y, rt in points if rt is not None]
-        if len(successful_points) > 1:
-            # Create smooth line through successful points
-            line_coords = []
-            for x, y in successful_points:
-                line_coords.extend([x, y])
-            
-            if len(line_coords) >= 4:  # Need at least 2 points
-                self.canvas.create_line(line_coords, 
-                                      fill=self.colors['line'], width=3, 
-                                      smooth=True, capstyle='round', joinstyle='round')
-        
-        # Draw data points with better styling
-        for i, ((x, y, response_time), color) in enumerate(zip(points, colors)):
-            if response_time is None:
-                # Draw styled X for timeout
-                size = 5
-                self.canvas.create_line(x-size, y-size, x+size, y+size, 
-                                      fill=color, width=4, capstyle='round')
-                self.canvas.create_line(x-size, y+size, x+size, y-size, 
-                                      fill=color, width=4, capstyle='round')
-                # Add timeout indicator
-                self.canvas.create_text(x, y+15, text="timeout", anchor="center",
-                                      fill=color, font=("Segoe UI", 8))
-            else:
-                # Draw styled circle for successful ping
-                radius = 5
-                self.canvas.create_oval(x-radius, y-radius, x+radius, y+radius,
-                                      fill=color, outline="white", width=2)
-                
-                # Only show response time for the most recent point to avoid clutter
-                if i == len(points) - 1 and len(points) > 1:
-                    self.canvas.create_text(x, y-20, text=f"{response_time:.1f}ms",
-                                          anchor="center", fill=color,
-                                          font=("Segoe UI", 9, "bold"))
-    
-    def draw_stats_summary(self, recent_data):
-        """Draw current session stats on the graph"""
-        if not recent_data:
-            return
-        
-        # Calculate stats
-        successful_pings = [d['response_time'] for d in recent_data if d['response_time'] is not None]
-        timeout_count = len([d for d in recent_data if d['response_time'] is None])
-        
-        if successful_pings:
-            avg_time = sum(successful_pings) / len(successful_pings)
-            min_time = min(successful_pings)
-            max_time = max(successful_pings)
-            
-            # Position stats in bottom-left of graph area
-            stats_x = self.margin_left + 15
-            stats_y = self.margin_top + self.graph_height - 45
-            
-            # Draw semi-transparent background
-            self.canvas.create_rectangle(stats_x - 10, stats_y - 5, stats_x + 200, stats_y + 30,
-                                       fill="white", outline=self.colors['grid_major'], width=1)
-
 def open_ping_window(root):
-    """Open the enhanced ping tool window with graph"""
+    """Open the ping tool window"""
     ping_win = tk.Toplevel(root)
     ping_win.title("Port Checker Plus - Ping")
-    ping_win.geometry("650x800")  # Adjusted height for cleaner layout
+    ping_win.geometry("650x550")  # Reduced height since no graph
     ping_win.configure(bg="#ffffff")
     ping_win.transient(root)
     ping_win.grab_set()
@@ -1137,7 +856,6 @@ def open_ping_window(root):
     
     # Configure window grid weights
     ping_win.grid_rowconfigure(2, weight=1)  # Results area gets most space
-    ping_win.grid_rowconfigure(3, weight=0)  # Graph gets fixed space
     ping_win.grid_columnconfigure(0, weight=1)
     
     # Add window close handler to stop ping when window is closed
@@ -1174,6 +892,38 @@ def open_ping_window(root):
          bg="#ffffff", fg="#2c3e50").pack(side="left")
     host_entry = tk.Entry(host_frame, font=("Segoe UI", 10), width=20)
     host_entry.pack(side="left", padx=(2, 0))
+    
+    # Pre-populate with host from main window, stripping CIDR notation if present
+    try:
+        if hasattr(root, 'host_entry') and root.host_entry:
+            main_host = root.host_entry.get()
+            print(f"Debug: Raw main_host value: '{main_host}' (length: {len(main_host)})")
+            
+            if main_host:
+                main_host = main_host.strip()
+                print(f"Debug: After strip: '{main_host}'")
+                
+                # Check for CIDR notation (both / and \ separators) and remove it
+                if '/' in main_host:
+                    ping_host = main_host.split('/')[0].strip()
+                    print(f"Debug: Found CIDR with /. Split result: '{ping_host}'")
+                elif '\\' in main_host:
+                    ping_host = main_host.split('\\')[0].strip()
+                    print(f"Debug: Found CIDR with \\. Split result: '{ping_host}'")
+                else:
+                    ping_host = main_host
+                    print(f"Debug: No CIDR found. Using: '{ping_host}'")
+                
+                # Clear the entry and insert the processed host
+                host_entry.delete(0, tk.END)
+                host_entry.insert(0, ping_host)
+                print(f"Debug: Inserted into ping window: '{ping_host}'")
+            else:
+                print("Debug: Main host field is empty")
+    except Exception as e:
+        print(f"Debug: Exception occurred: {e}")
+        import traceback
+        traceback.print_exc()
     
     # Count input and continuous checkbox
     count_frame = tk.Frame(ping_section, bg="#ffffff")
@@ -1282,7 +1032,7 @@ def open_ping_window(root):
     text_frame.grid_columnconfigure(0, weight=1)
     
     results_text = tk.Text(text_frame, font=("Consolas", 9), bg="#f8f9fa", 
-                          fg="#2c3e50", wrap=tk.WORD, state=tk.DISABLED, height=12)
+                          fg="#2c3e50", wrap=tk.WORD, state=tk.DISABLED, height=18)
     results_text.grid(row=0, column=0, sticky="nsew")
     
     # Scrollbar for text widget
@@ -1296,19 +1046,9 @@ def open_ping_window(root):
     results_text.tag_configure("info", foreground="#3498db", font=("Consolas", 9, "italic"))
     results_text.tag_configure("success", foreground="#27ae60")
     
-    # Graph frame
-    graph_frame = tk.LabelFrame(ping_win, text="Network Latency Monitor", 
-                               font=("Segoe UI", 10, "bold"), bg="#ffffff", 
-                               fg="#34495e", padx=10, pady=10)
-    graph_frame.grid(row=3, column=0, sticky="ew", padx=20, pady=(0, 10))
-    
-    # Create ping graph widget
-    ping_graph = PingGraphWidget(graph_frame, width=600, height=200)
-    ping_graph.get_widget().pack(pady=5)
-    
     # Status label
     status_frame = tk.Frame(ping_win, bg="#ffffff")
-    status_frame.grid(row=4, column=0, sticky="ew", padx=20, pady=(0, 10))
+    status_frame.grid(row=3, column=0, sticky="ew", padx=20, pady=(0, 10))
     
     status_label = tk.Label(status_frame, text="Ready", font=("Segoe UI", 9), 
                            bg="#ffffff", fg="#7f8c8d")
@@ -1353,7 +1093,7 @@ def open_ping_window(root):
         stats_label.config(text=f"Statistics: {stats_text}")
     
     def append_result(text, tag="output", response_time=None):
-        """Append text to results with specified tag and update graph"""
+        """Append text to results with specified tag"""
         try:
             # Check if the widget still exists before trying to modify it
             if results_text.winfo_exists():
@@ -1368,13 +1108,9 @@ def open_ping_window(root):
                 if ping_win.winfo_exists():
                     ping_win.update_idletasks()
                 
-                # Update statistics and graph if this is a ping result
+                # Update statistics if this is a ping result
                 if tag == "output" and ("time" in text.lower() or "timeout" in text.lower() or "unreachable" in text.lower()):
                     update_statistics(response_time)
-                    
-                    # Update graph with current ping data
-                    ping_data = ping_tool.get_ping_data()
-                    ping_graph.update_graph(ping_data)
                     
         except tk.TclError:
             # Widget has been destroyed, ignore the update
@@ -1405,13 +1141,6 @@ def open_ping_window(root):
                     'total_time': 0, 'avg_time': 0
                 })
                 stats_label.config(text="Statistics: Ready")
-                
-                # Clear ping data thread-safely
-                with ping_tool.data_lock:
-                    ping_tool.ping_data.clear()
-                
-                # Clear graph
-                ping_graph.update_graph([])
                 
         except tk.TclError:
             # Widget has been destroyed, ignore the update
