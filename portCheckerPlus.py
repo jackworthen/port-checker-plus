@@ -847,7 +847,7 @@ def open_ping_window(root):
     """Open the ping tool window"""
     ping_win = tk.Toplevel(root)
     ping_win.title("Port Checker Plus - Ping")
-    ping_win.geometry("480x575")  # Reduced height since no graph
+    ping_win.geometry("445x575")  # Reduced height since no graph
     ping_win.configure(bg="#ffffff")
     ping_win.transient(root)
     ping_win.grab_set()
