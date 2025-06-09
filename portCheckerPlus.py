@@ -19,7 +19,6 @@ import sys
 import struct
 import re  # Added for banner parsing
 import subprocess  # Added for ping functionality
-import math  # Added for graph calculations
 
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
