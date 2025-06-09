@@ -847,7 +847,7 @@ def open_ping_window(root):
     """Open the ping tool window"""
     ping_win = tk.Toplevel(root)
     ping_win.title("Port Checker Plus - Ping")
-    ping_win.geometry("470x550")  # Reduced height since no graph
+    ping_win.geometry("480x575")  # Reduced height since no graph
     ping_win.configure(bg="#ffffff")
     ping_win.transient(root)
     ping_win.grab_set()
@@ -897,33 +897,23 @@ def open_ping_window(root):
     try:
         if hasattr(root, 'host_entry') and root.host_entry:
             main_host = root.host_entry.get()
-            print(f"Debug: Raw main_host value: '{main_host}' (length: {len(main_host)})")
             
             if main_host:
                 main_host = main_host.strip()
-                print(f"Debug: After strip: '{main_host}'")
                 
                 # Check for CIDR notation (both / and \ separators) and remove it
                 if '/' in main_host:
                     ping_host = main_host.split('/')[0].strip()
-                    print(f"Debug: Found CIDR with /. Split result: '{ping_host}'")
                 elif '\\' in main_host:
                     ping_host = main_host.split('\\')[0].strip()
-                    print(f"Debug: Found CIDR with \\. Split result: '{ping_host}'")
                 else:
                     ping_host = main_host
-                    print(f"Debug: No CIDR found. Using: '{ping_host}'")
                 
                 # Clear the entry and insert the processed host
                 host_entry.delete(0, tk.END)
                 host_entry.insert(0, ping_host)
-                print(f"Debug: Inserted into ping window: '{ping_host}'")
-            else:
-                print("Debug: Main host field is empty")
     except Exception as e:
-        print(f"Debug: Exception occurred: {e}")
-        import traceback
-        traceback.print_exc()
+        pass  # Silently handle any errors during pre-population
     
     # Count input and continuous checkbox
     count_frame = tk.Frame(ping_section, bg="#ffffff")
@@ -1006,14 +996,6 @@ def open_ping_window(root):
                                relief="flat", padx=20, pady=8, command=set_host_to_main)
     set_host_button.pack(side="right")
     
-    # Statistics frame
-    stats_frame = tk.Frame(input_frame, bg="#ffffff")
-    stats_frame.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(10, 0))
-    
-    stats_label = tk.Label(stats_frame, text="Statistics: Ready", 
-                          font=("Segoe UI", 9), bg="#ffffff", fg="#7f8c8d")
-    stats_label.pack(anchor="w")
-    
     # Results frame
     results_frame = tk.Frame(ping_win, bg="#ffffff")
     results_frame.grid(row=2, column=0, sticky="nsew", padx=20, pady=(0, 10))
@@ -1046,9 +1028,17 @@ def open_ping_window(root):
     results_text.tag_configure("info", foreground="#3498db", font=("Consolas", 9, "italic"))
     results_text.tag_configure("success", foreground="#27ae60")
     
+    # Statistics frame (moved below results)
+    stats_frame = tk.Frame(ping_win, bg="#ffffff")
+    stats_frame.grid(row=3, column=0, sticky="ew", padx=20, pady=(0, 10))
+    
+    stats_label = tk.Label(stats_frame, text="", 
+                          font=("Segoe UI", 9), bg="#ffffff", fg="#3498db", justify="left")
+    stats_label.pack(anchor="w")
+    
     # Status label
     status_frame = tk.Frame(ping_win, bg="#ffffff")
-    status_frame.grid(row=3, column=0, sticky="ew", padx=20, pady=(0, 10))
+    status_frame.grid(row=4, column=0, sticky="ew", padx=20, pady=(0, 10))
     
     status_label = tk.Label(status_frame, text="Ready", font=("Segoe UI", 9), 
                            bg="#ffffff", fg="#7f8c8d")
@@ -1081,16 +1071,15 @@ def open_ping_window(root):
         # Calculate packet loss percentage
         loss_percent = (ping_stats['lost'] / ping_stats['sent']) * 100 if ping_stats['sent'] > 0 else 0
         
-        # Update statistics display
+        # Update statistics display with two lines
         if ping_stats['received'] > 0:
-            stats_text = (f"Sent: {ping_stats['sent']}, Received: {ping_stats['received']}, "
-                         f"Lost: {ping_stats['lost']} ({loss_percent:.1f}% loss) | "
-                         f"Min: {ping_stats['min_time']:.1f}ms, Max: {ping_stats['max_time']:.1f}ms, "
-                         f"Avg: {ping_stats['avg_time']:.1f}ms")
+            line1 = f"Sent: {ping_stats['sent']}, Received: {ping_stats['received']}, Lost: {ping_stats['lost']} ({loss_percent:.1f}% loss)"
+            line2 = f"Min: {ping_stats['min_time']:.1f}ms, Max: {ping_stats['max_time']:.1f}ms, Avg: {ping_stats['avg_time']:.1f}ms"
+            stats_text = f"{line1}\n{line2}"
         else:
             stats_text = f"Sent: {ping_stats['sent']}, Received: 0, Lost: {ping_stats['lost']} (100% loss)"
         
-        stats_label.config(text=f"Statistics: {stats_text}")
+        stats_label.config(text=stats_text)
     
     def append_result(text, tag="output", response_time=None):
         """Append text to results with specified tag"""
@@ -1140,7 +1129,7 @@ def open_ping_window(root):
                     'min_time': float('inf'), 'max_time': 0,
                     'total_time': 0, 'avg_time': 0
                 })
-                stats_label.config(text="Statistics: Ready")
+                stats_label.config(text="")
                 
         except tk.TclError:
             # Widget has been destroyed, ignore the update
@@ -1539,6 +1528,40 @@ def update_advanced_window_appearance():
             # Hide red header frame
             if hasattr(root, 'advanced_header_frame'):
                 root.advanced_header_frame.pack_forget()
+
+def open_log_directory():
+    """Open the configured export/log directory in the system's default file manager"""
+    try:
+        config = load_config()
+        export_dir = config.get("export_directory", os.getcwd())
+        
+        # Check if directory exists
+        if not os.path.exists(export_dir):
+            response = messagebox.askyesno(
+                "Directory Not Found", 
+                f"The log directory does not exist:\n{export_dir}\n\n"
+                f"Would you like to create it?",
+                icon="question"
+            )
+            if response:
+                try:
+                    os.makedirs(export_dir, exist_ok=True)
+                except Exception as e:
+                    messagebox.showerror("Error", f"Could not create directory:\n{e}")
+                    return
+            else:
+                return
+        
+        # Open directory in system's default file manager
+        if platform.system() == "Windows":
+            os.startfile(export_dir)
+        elif platform.system() == "Darwin":  # macOS
+            subprocess.run(["open", export_dir])
+        else:  # Linux and other Unix-like systems
+            subprocess.run(["xdg-open", export_dir])
+            
+    except Exception as e:
+        messagebox.showerror("Error", f"Could not open log directory:\n{e}")
 
 def open_documentation():
     """Open the documentation URL in the default browser"""
@@ -3362,23 +3385,37 @@ def run_gui():
 
     menubar = Menu(root)
     file_menu = Menu(menubar, tearoff=0)
-    file_menu.add_command(label="⏻ Exit", command=root.quit)
+    file_menu.add_command(label="Open Log Directory", command=open_log_directory, accelerator="(Ctrl)+O)")
+    file_menu.add_separator()
+    file_menu.add_command(label="Exit", command=root.quit, accelerator="(Ctrl+Q)")
     menubar.add_cascade(label="File", menu=file_menu)
 
     edit_menu = Menu(menubar, tearoff=0)
-    edit_menu.add_command(label="⚙️ Settings", command=lambda: open_settings_window(root, config, "Defaults"))
+    edit_menu.add_command(label="Settings", command=lambda: open_settings_window(root, config, "Defaults"), accelerator="(Ctrl+S)")
     menubar.add_cascade(label="Edit", menu=edit_menu)
 
     # Add Tools menu with Ping option
     tools_menu = Menu(menubar, tearoff=0)
-    tools_menu.add_command(label="🏓 Ping", command=lambda: open_ping_window(root))
+    tools_menu.add_command(label="Ping", command=lambda: open_ping_window(root), accelerator="(Ctrl+P)")
     menubar.add_cascade(label="Tools", menu=tools_menu)
 
     help_menu = Menu(menubar, tearoff=0)
-    help_menu.add_command(label="❓Documentation", command=open_documentation)
+    help_menu.add_command(label="Documentation", command=open_documentation, accelerator="(Ctrl+D)")
     menubar.add_cascade(label="Help", menu=help_menu)
 
     root.config(menu=menubar)
+    
+    # Bind keyboard shortcuts
+    root.bind('<Control-o>', lambda e: open_log_directory())
+    root.bind('<Control-O>', lambda e: open_log_directory())
+    root.bind('<Control-q>', lambda e: root.quit())
+    root.bind('<Control-Q>', lambda e: root.quit())
+    root.bind('<Control-s>', lambda e: open_settings_window(root, config, "Defaults"))
+    root.bind('<Control-S>', lambda e: open_settings_window(root, config, "Defaults"))
+    root.bind('<Control-p>', lambda e: open_ping_window(root))
+    root.bind('<Control-P>', lambda e: open_ping_window(root))
+    root.bind('<Control-d>', lambda e: open_documentation())
+    root.bind('<Control-D>', lambda e: open_documentation())
 
     # Advanced mode header frame (initially hidden)
     root.advanced_header_frame = tk.Frame(root, bg="#e74c3c", height=35)
@@ -3403,7 +3440,7 @@ def run_gui():
     root.feature_indicator.pack(side="left", padx=(15, 0))
     
     # Settings button on the right
-    settings_btn = tk.Button(header_content, text="⚙️ Settings", bg="#c0392b", fg="white",
+    settings_btn = tk.Button(header_content, text="Settings", bg="#c0392b", fg="white",
                             font=("Segoe UI", 9), relief="flat", padx=10, pady=2,
                             activebackground="#a93226",
                             command=lambda: open_settings_window(root, config, "Advanced"))
