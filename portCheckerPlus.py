@@ -928,7 +928,7 @@ def open_ping_window(root):
     
     # Continuous ping checkbox
     continuous_var = tk.BooleanVar()
-    continuous_check = tk.Checkbutton(count_frame, text="Continuous ping", 
+    continuous_check = tk.Checkbutton(count_frame, text="Until stopped", 
                                      variable=continuous_var, bg="#ffffff", 
                                      font=("Segoe UI", 10), fg="#2c3e50",
                                      activebackground="#ffffff")
