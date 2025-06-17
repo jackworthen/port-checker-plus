@@ -1667,7 +1667,7 @@ def open_settings_window(root, config, initial_tab="Defaults"):
     
     settings_win = tk.Toplevel(root)
     settings_win.title("Settings - Port Checker Plus")
-    settings_win.geometry("520x640")  # Reduced height after removing OS fingerprinting
+    settings_win.geometry("520x640")  
     settings_win.configure(bg="#ffffff")
     settings_win.transient(root)
     settings_win.grab_set()
@@ -2712,7 +2712,6 @@ def check_ports_threaded_with_export(hosts, ports, results_tree, clear_button, c
             if counter["count"] == total_scans or stop_scan_event.is_set():
                 counter["completed"] = 1
                 
-                # No OS fingerprinting section - proceed directly to completion
                 if not counter["ui_updated"]:
                     counter["ui_updated"] = True
                     results_tree.after(0, lambda: update_results_tree(results_tree, scan_results))
