@@ -804,7 +804,7 @@ def open_ping_window(root):
     # Timeout input
     tk.Label(ping_section, text="Timeout (sec):", font=("Segoe UI", 10), 
              bg="#ffffff", fg="#2c3e50").grid(row=2, column=0, sticky="w", pady=5)
-    timeout_var = tk.StringVar(value="3")
+    timeout_var = tk.StringVar(value="5")
     timeout_spin = tk.Spinbox(ping_section, from_=1, to=30, width=10, 
                              textvariable=timeout_var, font=("Segoe UI", 10))
     timeout_spin.grid(row=2, column=1, sticky="w", padx=(10, 0), pady=5)
