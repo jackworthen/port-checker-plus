@@ -101,6 +101,8 @@ def get_default_config():
         "export_results": False,
         "export_directory": os.getcwd(),
         "export_format": "TXT",
+        "manual_export_format": "CSV",  # Added for manual export
+        "manual_export_directory": os.getcwd(),  # Added for manual export
         "default_host": "",
         "default_ports": "",
         "retry_count": 2,
@@ -1115,6 +1117,10 @@ def load_config():
                 # Ensure new keys exist
                 if "export_format" not in config:
                     config["export_format"] = "TXT"
+                if "manual_export_format" not in config:
+                    config["manual_export_format"] = "CSV"
+                if "manual_export_directory" not in config:
+                    config["manual_export_directory"] = os.getcwd()
                 if "randomize_ports" not in config:
                     config["randomize_ports"] = False
                 if "variable_delay_scan" not in config:
@@ -1996,6 +2002,65 @@ def open_settings_window(root, config, initial_tab="Defaults"):
     banner_desc.pack(anchor="w", pady=(1, 8))
 
     # ===== EXPORT TAB =====
+    export_tab_frame = tk.Frame(notebook, bg="#ffffff")
+    notebook.add(export_tab_frame, text="Export")
+
+    # Manual Export Settings Section
+    manual_export_section = tk.LabelFrame(export_tab_frame, text="Manual Export Settings", 
+                                         font=("Segoe UI", 10, "bold"), bg="#ffffff", 
+                                         fg="#34495e", padx=15, pady=10)
+    manual_export_section.pack(fill="x", padx=15, pady=(15, 10))
+
+    # Export format selection
+    manual_format_frame = tk.Frame(manual_export_section, bg="#ffffff")
+    manual_format_frame.pack(fill="x", pady=(5, 15))
+    
+    tk.Label(manual_format_frame, text="Export Format:", font=("Segoe UI", 10), 
+             bg="#ffffff", fg="#2c3e50").pack(side="left")
+    manual_format_var = tk.StringVar(value=config.get("manual_export_format", "CSV"))
+    manual_format_options = ["CSV", "TXT", "JSON"]
+    manual_format_combo = ttk.Combobox(manual_format_frame, textvariable=manual_format_var, 
+                                      values=manual_format_options, state="readonly", width=10,
+                                      font=("Segoe UI", 10))
+    manual_format_combo.pack(side="right")
+
+    # Export directory
+    manual_dir_label = tk.Label(manual_export_section, text="Default Export Directory:", 
+                               font=("Segoe UI", 10), bg="#ffffff", fg="#2c3e50")
+    manual_dir_label.pack(anchor="w", pady=(0, 5))
+
+    manual_dir_frame = tk.Frame(manual_export_section, bg="#ffffff")
+    manual_dir_frame.pack(fill="x", pady=(0, 10))
+    
+    manual_dir_entry = tk.Entry(manual_dir_frame, font=("Segoe UI", 10))
+    manual_dir_entry.insert(0, config.get("manual_export_directory", os.getcwd()))
+    manual_dir_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
+    
+    manual_browse_btn = tk.Button(manual_dir_frame, text="Browse...", font=("Segoe UI", 9),
+                                 bg="#3498db", fg="white", activebackground="#2980b9",
+                                 relief="flat", padx=15)
+    manual_browse_btn.pack(side="right")
+
+    def browse_manual_directory():
+        selected = filedialog.askdirectory(parent=settings_win, 
+                                         title="Select Default Export Directory")
+        if selected:
+            manual_dir_entry.delete(0, tk.END)
+            manual_dir_entry.insert(0, selected)
+        settings_win.lift()
+        settings_win.focus_force()
+
+    manual_browse_btn.config(command=browse_manual_directory)
+
+    # Export description
+    export_desc = tk.Label(manual_export_section, 
+                          text="Configure default settings for manual export using the Export Results button. "
+                               "These settings are separate from automatic logging.", 
+                          font=("Segoe UI", 9), bg="#ffffff", fg="#7f8c8d", 
+                          wraplength=450, justify="left")
+    export_desc.pack(anchor="w", pady=(5, 0))
+
+    # ===== LOGGING TAB =====
     export_frame = tk.Frame(notebook, bg="#ffffff")
     notebook.add(export_frame, text="Logging")
 
@@ -2266,6 +2331,8 @@ def open_settings_window(root, config, initial_tab="Defaults"):
             config["timeout"] = timeout_val
             config["export_results"] = export_var.get()
             config["export_format"] = format_var.get()
+            config["manual_export_format"] = manual_format_var.get()
+            config["manual_export_directory"] = manual_dir_entry.get().strip()
             config["show_open_only"] = show_open_only_var.get()
             config["default_host"] = host_entry.get().strip()
             config["retry_count"] = int(retry_spin.get())
@@ -2321,7 +2388,8 @@ def open_settings_window(root, config, initial_tab="Defaults"):
         "Defaults": 0,
         "General": 1, 
         "Advanced": 2,
-        "Logging": 3
+        "Export": 3,
+        "Logging": 4
     }
     
     if initial_tab in tab_mapping:
@@ -2658,6 +2726,9 @@ def update_results_tree(results_tree, scan_results):
     # Enable clear button if there are results to display
     if scan_results and hasattr(root, 'clear_button'):
         root.clear_button.config(state=tk.NORMAL)
+    
+    # Update export button visibility
+    update_export_button_visibility()
 
 def check_ports_threaded_with_export(hosts, ports, results_tree, clear_button, config, scan_data):
     # Reload config to get the latest settings (in case user just changed them)
@@ -2961,6 +3032,214 @@ def on_stop_scan():
     # Re-enable check button immediately so user can start new scan
     root.check_button.config(state=tk.NORMAL)
 
+def export_current_results():
+    """Export current scan results using manual export settings"""
+    if not hasattr(root, 'results_tree') or not root.results_tree.get_children():
+        messagebox.showwarning("No Results", "No scan results to export.")
+        return
+    
+    config = load_config()
+    
+    # Get manual export settings
+    export_format = config.get("manual_export_format", "CSV").upper()
+    export_dir = config.get("manual_export_directory", os.getcwd())
+    
+    # Create default filename with timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    default_filename = f"port_scan_results_{timestamp}"
+    
+    # File extension based on format
+    extensions = {
+        "CSV": ".csv",
+        "TXT": ".txt", 
+        "JSON": ".json"
+    }
+    
+    extension = extensions.get(export_format, ".csv")
+    default_filename += extension
+    
+    # Ask user for save location
+    file_path = filedialog.asksaveasfilename(
+        parent=root,
+        title="Export Scan Results",
+        defaultextension=extension,
+        filetypes=[
+            (f"{export_format} files", f"*{extension}"),
+            ("All files", "*.*")
+        ],
+        initialdir=export_dir,
+        initialfile=default_filename
+    )
+    
+    if not file_path:
+        return  # User cancelled
+    
+    try:
+        # Convert treeview data to scan results format
+        scan_results = []
+        config = load_config()
+        show_banner = config.get("banner_grabbing", False)
+        
+        for item in root.results_tree.get_children():
+            values = root.results_tree.item(item)['values']
+            
+            # Helper function to safely convert response time
+            def safe_float_conversion(time_str):
+                try:
+                    if time_str == '-' or time_str == '' or time_str is None:
+                        return 0
+                    # Remove 'ms' suffix and convert to float
+                    time_str = str(time_str).replace('ms', '').strip()
+                    return float(time_str) if time_str else 0
+                except (ValueError, TypeError):
+                    return 0
+            
+            # Parse values based on current column structure
+            if len(values) >= 6:  # Has all columns including banner
+                if show_banner:
+                    # Host, Port, Protocol, Status, Service, Banner, Response Time
+                    result = {
+                        'host': str(values[0]) if len(values) > 0 else 'Unknown',
+                        'port': int(values[1]) if len(values) > 1 and str(values[1]).isdigit() else 0,
+                        'protocol': str(values[2]) if len(values) > 2 else 'Unknown',
+                        'status': str(values[3]) if len(values) > 3 else 'Unknown',
+                        'service': str(values[4]) if len(values) > 4 else 'Unknown',
+                        'banner': str(values[5]) if len(values) > 5 else 'No banner',
+                        'response_time': safe_float_conversion(values[6]) if len(values) > 6 else 0
+                    }
+                else:
+                    # Host, Port, Protocol, Status, Service, Response Time (no banner)
+                    result = {
+                        'host': str(values[0]) if len(values) > 0 else 'Unknown',
+                        'port': int(values[1]) if len(values) > 1 and str(values[1]).isdigit() else 0,
+                        'protocol': str(values[2]) if len(values) > 2 else 'Unknown',
+                        'status': str(values[3]) if len(values) > 3 else 'Unknown',
+                        'service': str(values[4]) if len(values) > 4 else 'Unknown',
+                        'banner': 'No banner',
+                        'response_time': safe_float_conversion(values[5]) if len(values) > 5 else 0
+                    }
+            else:
+                # Fallback for incomplete data
+                result = {
+                    'host': str(values[0]) if len(values) > 0 else 'Unknown',
+                    'port': int(values[1]) if len(values) > 1 and str(values[1]).isdigit() else 0,
+                    'protocol': str(values[2]) if len(values) > 2 else 'Unknown',
+                    'status': str(values[3]) if len(values) > 3 else 'Unknown',
+                    'service': str(values[4]) if len(values) > 4 else 'Unknown',
+                    'banner': 'No banner',
+                    'response_time': 0
+                }
+            
+            scan_results.append(result)
+        
+        # Create scan data for export
+        scan_data = {
+            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            'host_input': 'Manual Export',
+            'port_input': 'N/A',
+            'protocol': 'N/A',
+            'is_cidr': False,
+            'resolved_ip': 'N/A'
+        }
+        
+        # Export based on format
+        if export_format == "CSV":
+            export_manual_csv(file_path, scan_data, scan_results)
+        elif export_format == "TXT":
+            export_manual_txt(file_path, scan_data, scan_results)
+        elif export_format == "JSON":
+            export_manual_json(file_path, scan_data, scan_results)
+        
+        messagebox.showinfo("Export Complete", f"Results exported successfully to:\n{file_path}")
+        
+    except Exception as e:
+        messagebox.showerror("Export Error", f"Failed to export results:\n{str(e)}")
+
+def export_manual_csv(file_path, scan_data, scan_results):
+    """Export results to CSV format for manual export"""
+    with open(file_path, "w", newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        
+        # Write header
+        writer.writerow(["Host", "Port", "Protocol", "Status", "Service", "Banner", "Response Time (ms)"])
+        
+        # Write results
+        for result in scan_results:
+            writer.writerow([
+                result['host'],
+                result['port'],
+                result['protocol'],
+                result['status'],
+                result['service'],
+                result.get('banner', 'No banner'),
+                result['response_time'] if result['response_time'] > 0 else ""
+            ])
+
+def export_manual_txt(file_path, scan_data, scan_results):
+    """Export results to TXT format for manual export"""
+    with open(file_path, "w", encoding='utf-8') as f:
+        f.write("=" * 50 + "\n")
+        f.write(f"Port Scan Results Export\n")
+        f.write(f"Generated: {scan_data['timestamp']}\n")
+        f.write(f"Total Results: {len(scan_results)}\n")
+        f.write("=" * 50 + "\n\n")
+        
+        # Group results by host
+        host_results = {}
+        for result in scan_results:
+            host = result['host']
+            if host not in host_results:
+                host_results[host] = []
+            host_results[host].append(result)
+        
+        for host, results in host_results.items():
+            f.write(f"Host: {host}\n")
+            f.write("-" * 30 + "\n")
+            for result in results:
+                status_text = f"{result['protocol']} Port {result['port']} is {result['status']}"
+                if result['service'] and result['service'] != 'Unknown':
+                    status_text += f" (Service: {result['service']})"
+                if result.get('banner') and result['banner'] not in ['No banner', 'Unknown']:
+                    status_text += f" - Banner: {result['banner']}"
+                if result['response_time'] > 0:
+                    status_text += f" - {result['response_time']}ms"
+                f.write(status_text + "\n")
+            f.write("\n")
+
+def export_manual_json(file_path, scan_data, scan_results):
+    """Export results to JSON format for manual export"""
+    export_data = {
+        "export_info": {
+            "timestamp": scan_data['timestamp'],
+            "export_type": "Manual Export",
+            "total_results": len(scan_results)
+        },
+        "results": scan_results,
+        "summary": {
+            "total_hosts": len(set(r['host'] for r in scan_results)),
+            "total_ports": len(scan_results),
+            "open_ports": len([r for r in scan_results if r['status'] == 'OPEN']),
+            "closed_ports": len([r for r in scan_results if r['status'] == 'CLOSED']),
+            "filtered_ports": len([r for r in scan_results if 'FILTERED' in r['status']]),
+            "error_ports": len([r for r in scan_results if r['status'] == 'ERROR'])
+        }
+    }
+    
+    with open(file_path, "w", encoding='utf-8') as f:
+        json.dump(export_data, f, indent=2, ensure_ascii=False)
+
+def update_export_button_visibility():
+    """Update visibility of export button based on scan results"""
+    if hasattr(root, 'export_button') and hasattr(root, 'results_tree'):
+        if root.results_tree.get_children():
+            # Show export button if there are results
+            root.export_button.pack(side="left", padx=(0, 15), after=root.clear_button)
+            root.export_button.config(state=tk.NORMAL)
+        else:
+            # Hide export button if no results
+            root.export_button.pack_forget()
+            root.export_button.config(state=tk.DISABLED)
+
 def clear_results_tree():
     """Clear the results tree"""
     for item in root.results_tree.get_children():
@@ -2976,6 +3255,9 @@ def clear_results_tree():
     root.stop_button.pack_forget()  # Hide stop button when clearing results
     root.stop_button.config(state=tk.NORMAL, text="Stop Scan")  # Reset stop button state
     stop_scan_event.clear()
+    
+    # Hide export button when clearing results
+    update_export_button_visibility()
 
 def sort_treeview(tree, col, reverse):
     """Sort treeview by column"""
@@ -3215,12 +3497,18 @@ def run_gui():
     root.clear_button = tk.Button(button_frame, text="Clear Results", font=("Segoe UI", 10), 
                                  command=clear_results_tree, state=tk.DISABLED, bg="#95a5a6", 
                                  fg="white", activebackground="#7f8c8d", relief="flat", padx=20, pady=5)
-    root.clear_button.pack(side="left", padx=(0, 15))
+    root.clear_button.pack(side="left", padx=(0, 10))
+    
+    # Export button (initially hidden)
+    root.export_button = tk.Button(button_frame, text="Export Results", font=("Segoe UI", 10), 
+                                  command=export_current_results, state=tk.DISABLED, bg="#f39c12", 
+                                  fg="white", activebackground="#e67e22", relief="flat", padx=20, pady=5)
+    # Don't pack initially - will be shown when scan results are available
     
     # Profile indicator label (positioned to the far right)
     root.profile_label = tk.Label(button_frame, text="", font=("Segoe UI", 10, "bold"), 
                                  relief="solid", padx=12, pady=5, borderwidth=1)
-    root.profile_label.pack(side="right")
+    root.profile_label.pack(side="right", padx=(15, 0))
 
     # Filter section
     root.filter_frame = tk.LabelFrame(root, text="Search Results", bg="#f8f8f8", font=("Segoe UI", 10, "bold"))
@@ -3308,6 +3596,9 @@ def run_gui():
     # Initialize the profile indicator and advanced window appearance
     update_profile_indicator()
     update_advanced_window_appearance()
+    
+    # Initialize export button visibility
+    update_export_button_visibility()
 
     root.mainloop()
 
