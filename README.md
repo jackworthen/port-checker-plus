@@ -62,7 +62,7 @@ Choose from pre-configured port sets for common scenarios:
 | 🔒 **Security Scan** | 21, 22, 23, 80, 443... | Security assessment |
 
 ### 📊 **Export & Logging**
-- 📝 **Multiple Formats** - Export to TXT, CSV, JSON, or XML
+- 📝 **Multiple Formats** - Export results to TXT, CSV or JSON
 - 📈 **Detailed Reports** - Timestamps, response times, service detection, scan methods
 - 🗂️ **Automatic Logging** - Optional automatic result logging
 - 🧹 **Log Management** - Built-in log cleanup tool.
@@ -188,6 +188,10 @@ Access via **Edit → Settings** to customize:
 - 📝 **Export Formats** - TXT, CSV, JSON, XML
 - 📁 **Export Directory** - Choose save location
 - 🧹 **Log Management** - **UPDATED!** Always-available log cleanup (no longer hidden when logging is disabled)
+
+#### 📊 **Export Tab**
+- 📝 **Export Formats** - TXT, CSV, JSON
+- 📁 **Export Directory** - Choose save location
 
 ### 🛠️ **Tools Menu**
 Access additional utilities via **Tools**:
