@@ -1999,8 +1999,8 @@ def open_settings_window(root, config, initial_tab="Defaults"):
     export_frame = tk.Frame(notebook, bg="#ffffff")
     notebook.add(export_frame, text="Logging")
 
-    # Export Options Section
-    export_section = tk.LabelFrame(export_frame, text="Export Options", 
+    # Log Settings Section
+    export_section = tk.LabelFrame(export_frame, text="Log Settings", 
                                   font=("Segoe UI", 10, "bold"), bg="#ffffff", 
                                   fg="#34495e", padx=15, pady=10)
     export_section.pack(fill="x", padx=15, pady=(15, 10))
