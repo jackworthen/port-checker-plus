@@ -103,6 +103,7 @@ def get_default_config():
         "export_format": "TXT",
         "manual_export_format": "CSV",  # Added for manual export
         "manual_export_directory": os.getcwd(),  # Added for manual export
+        "auto_export": False,  # Added for auto export feature
         "default_host": "",
         "default_ports": "",
         "retry_count": 2,
@@ -1121,6 +1122,8 @@ def load_config():
                     config["manual_export_format"] = "CSV"
                 if "manual_export_directory" not in config:
                     config["manual_export_directory"] = os.getcwd()
+                if "auto_export" not in config:
+                    config["auto_export"] = False
                 if "randomize_ports" not in config:
                     config["randomize_ports"] = False
                 if "variable_delay_scan" not in config:
@@ -1429,9 +1432,17 @@ def open_documentation():
     except Exception as e:
         messagebox.showerror("Error", f"Could not open documentation:\n{e}")
 
-def get_export_file_path(config):
+def get_export_file_path(config, auto_export=False):
     """Get the export file path with appropriate extension"""
-    export_format = config.get("export_format", "TXT").upper()
+    if auto_export:
+        # Use manual export settings for auto export
+        export_format = config.get("manual_export_format", "CSV").upper()
+        export_directory = config.get("manual_export_directory", os.getcwd())
+    else:
+        # Use logging settings for regular export
+        export_format = config.get("export_format", "TXT").upper()
+        export_directory = config.get("export_directory", os.getcwd())
+    
     extensions = {
         "TXT": "portcheck_log.txt",
         "CSV": "portcheck_log.csv", 
@@ -1439,7 +1450,7 @@ def get_export_file_path(config):
         "XML": "portcheck_log.xml"
     }
     filename = extensions.get(export_format, "portcheck_log.txt")
-    return os.path.join(config["export_directory"], filename)
+    return os.path.join(export_directory, filename)
 
 def export_results_to_file(scan_data, scan_results, config):
     """Export scan results in the specified format"""
@@ -1463,6 +1474,46 @@ def export_results_to_file(scan_data, scan_results, config):
             
     except Exception as e:
         messagebox.showerror("Export Error", f"Could not export results:\n{e}")
+
+def auto_export_results(scan_data, scan_results, config):
+    """Auto export scan results using manual export settings"""
+    if not config.get("auto_export", False):
+        return
+        
+    try:
+        # Generate timestamp for unique filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        export_format = config.get("manual_export_format", "CSV").upper()
+        export_directory = config.get("manual_export_directory", os.getcwd())
+        
+        # Ensure export directory exists
+        os.makedirs(export_directory, exist_ok=True)
+        
+        # Generate filename with timestamp
+        extensions = {
+            "TXT": ".txt",
+            "CSV": ".csv", 
+            "JSON": ".json"
+        }
+        extension = extensions.get(export_format, ".csv")
+        filename = f"auto_export_{timestamp}{extension}"
+        export_file_path = os.path.join(export_directory, filename)
+        
+        if export_format == "TXT":
+            export_manual_txt(export_file_path, scan_data, scan_results)
+        elif export_format == "CSV":
+            export_manual_csv(export_file_path, scan_data, scan_results)
+        elif export_format == "JSON":
+            export_manual_json(export_file_path, scan_data, scan_results)
+        
+        # Show brief success message in status
+        if hasattr(root, 'status_label'):
+            current_status = root.status_label.cget("text")
+            root.status_label.config(text=f"{current_status} - Auto exported to {filename}")
+            
+    except Exception as e:
+        # Don't show error popup for auto export, just print to console
+        print(f"Auto export failed: {e}")
 
 def export_to_txt(file_path, scan_data, scan_results):
     """Export results to TXT format (updated for CIDR support and discovery features)"""
@@ -2005,11 +2056,33 @@ def open_settings_window(root, config, initial_tab="Defaults"):
     export_tab_frame = tk.Frame(notebook, bg="#ffffff")
     notebook.add(export_tab_frame, text="Export")
 
+    # Auto Export Settings Section
+    auto_export_section = tk.LabelFrame(export_tab_frame, text="Auto Export Settings", 
+                                       font=("Segoe UI", 10, "bold"), bg="#ffffff", 
+                                       fg="#34495e", padx=15, pady=10)
+    auto_export_section.pack(fill="x", padx=15, pady=(15, 10))
+
+    # Auto export checkbox
+    auto_export_var = tk.BooleanVar(value=config.get("auto_export", False))
+    auto_export_check = tk.Checkbutton(auto_export_section, 
+                                      text="Auto Export", 
+                                      variable=auto_export_var,
+                                      bg="#ffffff", font=("Segoe UI", 10), 
+                                      fg="#2c3e50", activebackground="#ffffff")
+    auto_export_check.pack(anchor="w", pady=(5, 10))
+
+    # Auto export description
+    auto_export_desc = tk.Label(auto_export_section, 
+                               text="Automatically export scan results to default export directory.  ",
+                               font=("Segoe UI", 9), bg="#ffffff", fg="#7f8c8d", 
+                               wraplength=450, justify="left")
+    auto_export_desc.pack(anchor="w", pady=(0, 15))
+
     # Manual Export Settings Section
     manual_export_section = tk.LabelFrame(export_tab_frame, text="Manual Export Settings", 
                                          font=("Segoe UI", 10, "bold"), bg="#ffffff", 
                                          fg="#34495e", padx=15, pady=10)
-    manual_export_section.pack(fill="x", padx=15, pady=(15, 10))
+    manual_export_section.pack(fill="x", padx=15, pady=(0, 10))
 
     # Export format selection
     manual_format_frame = tk.Frame(manual_export_section, bg="#ffffff")
@@ -2054,8 +2127,7 @@ def open_settings_window(root, config, initial_tab="Defaults"):
 
     # Export description
     export_desc = tk.Label(manual_export_section, 
-                          text="Configure default settings for manual export using the Export Results button. "
-                               "These settings are separate from automatic logging.", 
+                          text="Configure default settings for auto export and manual export. ",
                           font=("Segoe UI", 9), bg="#ffffff", fg="#7f8c8d", 
                           wraplength=450, justify="left")
     export_desc.pack(anchor="w", pady=(5, 0))
@@ -2320,6 +2392,19 @@ def open_settings_window(root, config, initial_tab="Defaults"):
                                            f"Cannot create export directory:\n{e}")
                         return
 
+            # Validate manual export directory
+            manual_export_path = manual_dir_entry.get().strip()
+            if not manual_export_path:
+                messagebox.showerror("Export Error", "Please select a directory for manual export.")
+                return
+            if not os.path.exists(manual_export_path):
+                try:
+                    os.makedirs(manual_export_path, exist_ok=True)
+                except Exception as e:
+                    messagebox.showerror("Export Error", 
+                                       f"Cannot create manual export directory:\n{e}")
+                    return
+
             # Validate fragmented scanning if enabled
             if fragmented_packets_var.get() and not fragmented_scanner.available:
                 messagebox.showwarning("Fragmented Scanning", 
@@ -2332,7 +2417,8 @@ def open_settings_window(root, config, initial_tab="Defaults"):
             config["export_results"] = export_var.get()
             config["export_format"] = format_var.get()
             config["manual_export_format"] = manual_format_var.get()
-            config["manual_export_directory"] = manual_dir_entry.get().strip()
+            config["manual_export_directory"] = manual_export_path
+            config["auto_export"] = auto_export_var.get()
             config["show_open_only"] = show_open_only_var.get()
             config["default_host"] = host_entry.get().strip()
             config["retry_count"] = int(retry_spin.get())
@@ -2366,6 +2452,9 @@ def open_settings_window(root, config, initial_tab="Defaults"):
                 
                 # Update results tree structure if discovery features changed
                 update_results_tree_structure()
+                
+                # Update export button visibility based on auto export setting
+                update_export_button_visibility()
 
             settings_win.destroy()
             
@@ -2798,6 +2887,13 @@ def check_ports_threaded_with_export(hosts, ports, results_tree, clear_button, c
                     except Exception as e:
                         messagebox.showerror("Export Error", f"Could not export results:\n{e}")
                 
+                # Auto export results if enabled (only if not stopped)
+                if current_config.get("auto_export", False) and not stop_scan_event.is_set():
+                    try:
+                        auto_export_results(scan_data, scan_results, current_config)
+                    except Exception as e:
+                        print(f"Auto export failed: {e}")
+                
                 # Schedule UI update on main thread
                 root.after(0, update_completion_ui)
                 
@@ -3229,10 +3325,17 @@ def export_manual_json(file_path, scan_data, scan_results):
         json.dump(export_data, f, indent=2, ensure_ascii=False)
 
 def update_export_button_visibility():
-    """Update visibility of export button based on scan results"""
+    """Update visibility of export button based on scan results and auto export setting"""
     if hasattr(root, 'export_button') and hasattr(root, 'results_tree'):
-        if root.results_tree.get_children():
-            # Show export button if there are results
+        config = load_config()
+        auto_export_enabled = config.get("auto_export", False)
+        
+        if auto_export_enabled:
+            # Hide export button when auto export is enabled
+            root.export_button.pack_forget()
+            root.export_button.config(state=tk.DISABLED)
+        elif root.results_tree.get_children():
+            # Show export button if there are results and auto export is disabled
             root.export_button.pack(side="left", padx=(0, 15), after=root.clear_button)
             root.export_button.config(state=tk.NORMAL)
         else:
@@ -3503,7 +3606,7 @@ def run_gui():
     root.export_button = tk.Button(button_frame, text="Export Results", font=("Segoe UI", 10), 
                                   command=export_current_results, state=tk.DISABLED, bg="#f39c12", 
                                   fg="white", activebackground="#e67e22", relief="flat", padx=20, pady=5)
-    # Don't pack initially - will be shown when scan results are available
+    # Don't pack initially - will be shown when scan results are available and auto export is disabled
     
     # Profile indicator label (positioned to the far right)
     root.profile_label = tk.Label(button_frame, text="", font=("Segoe UI", 10, "bold"), 
