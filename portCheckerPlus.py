@@ -1303,6 +1303,10 @@ def update_results_tree_structure():
         tags = root.results_tree.item(item)['tags']
         current_data.append((values, tags))
     
+    # Clear the tree before restoring data to prevent duplicates
+    for item in root.results_tree.get_children():
+        root.results_tree.delete(item)
+    
     # Reconfigure the treeview
     root.results_tree['columns'] = new_columns
     
