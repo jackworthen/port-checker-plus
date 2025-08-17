@@ -1432,6 +1432,30 @@ def open_documentation():
     except Exception as e:
         messagebox.showerror("Error", f"Could not open documentation:\n{e}")
 
+def show_about():
+    """Show the About dialog"""
+    about_text = """Port Checker Plus v2.1
+
+A comprehensive network port scanning tool with advanced features.
+
+Key Features:
+• TCP/UDP port scanning
+• CIDR network range scanning  
+• Stealth scanning options (randomized ports, variable delays)
+• Fragmented packet scanning (requires admin privileges)
+• Service banner grabbing
+• Multiple export formats (CSV, TXT, JSON, XML)
+• Built-in ping tool
+• Real-time progress tracking
+• Advanced filtering and sorting
+
+Developed by Jack Worthen
+
+For documentation and source code:
+github.com/jackworthen/port-checker-plus"""
+    
+    messagebox.showinfo("About Port Checker Plus", about_text)
+
 def get_export_file_path(config, auto_export=False):
     """Get the export file path with appropriate extension"""
     if auto_export:
@@ -3506,6 +3530,8 @@ def run_gui():
 
     help_menu = Menu(menubar, tearoff=0)
     help_menu.add_command(label="Documentation", command=open_documentation, accelerator="(Ctrl+D)")
+    help_menu.add_separator()
+    help_menu.add_command(label="About", command=show_about)
     menubar.add_cascade(label="Help", menu=help_menu)
 
     root.config(menu=menubar)
