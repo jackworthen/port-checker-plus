@@ -1433,13 +1433,48 @@ def open_documentation():
         messagebox.showerror("Error", f"Could not open documentation:\n{e}")
 
 def show_about():
-    """Show the About dialog"""
-    about_text = """Port Checker Plus v2.1
-
-A comprehensive network port scanning tool with advanced features.
-
-Key Features:
-• TCP/UDP port scanning
+    """Show the About dialog with application icon"""
+    about_win = tk.Toplevel(root)
+    about_win.title("About Port Checker Plus")
+    about_win.geometry("400x520")
+    about_win.configure(bg="#ffffff")
+    about_win.transient(root)
+    about_win.grab_set()
+    about_win.resizable(False, False)
+    set_window_icon(about_win)
+    
+    # Center the window
+    about_win.update_idletasks()
+    x = (about_win.winfo_screenwidth() // 2) - (about_win.winfo_width() // 2)
+    y = (about_win.winfo_screenheight() // 2) - (about_win.winfo_height() // 2)
+    about_win.geometry(f"+{x}+{y}")
+    
+    # Main content frame
+    content_frame = tk.Frame(about_win, bg="#ffffff")
+    content_frame.pack(fill="both", expand=True, padx=30, pady=30)
+    
+    # Application name and version
+    app_title = tk.Label(content_frame, text="Port Checker Plus", 
+                        font=("Segoe UI", 16, "bold"), bg="#ffffff", fg="#2c3e50")
+    app_title.pack(pady=(0, 5))
+    
+    version_label = tk.Label(content_frame, text="Version 2.1", 
+                            font=("Segoe UI", 12), bg="#ffffff", fg="#7f8c8d")
+    version_label.pack(pady=(0, 20))
+    
+    # Description
+    description = tk.Label(content_frame, 
+                          text="A comprehensive network port scanning tool with advanced features.",
+                          font=("Segoe UI", 10), bg="#ffffff", fg="#2c3e50",
+                          wraplength=350, justify="center")
+    description.pack(pady=(0, 20))
+    
+    # Features section
+    features_title = tk.Label(content_frame, text="Key Features:", 
+                             font=("Segoe UI", 11, "bold"), bg="#ffffff", fg="#2c3e50")
+    features_title.pack(anchor="w", pady=(0, 10))
+    
+    features_text = """• TCP/UDP port scanning
 • CIDR network range scanning  
 • Stealth scanning options (randomized ports, variable delays)
 • Fragmented packet scanning (requires admin privileges)
@@ -1447,14 +1482,33 @@ Key Features:
 • Multiple export formats (CSV, TXT, JSON, XML)
 • Built-in ping tool
 • Real-time progress tracking
-• Advanced filtering and sorting
-
-Developed by Jack Worthen
-
-For documentation and source code:
-github.com/jackworthen/port-checker-plus"""
+• Advanced filtering and sorting"""
     
-    messagebox.showinfo("About Port Checker Plus", about_text)
+    features_label = tk.Label(content_frame, text=features_text,
+                             font=("Segoe UI", 9), bg="#ffffff", fg="#34495e",
+                             justify="left", anchor="w")
+    features_label.pack(anchor="w", pady=(0, 20))
+    
+    # Developer credit
+    developer_label = tk.Label(content_frame, text="Developed by Jack Worthen",
+                              font=("Segoe UI", 10, "bold"), bg="#ffffff", fg="#2c3e50")
+    developer_label.pack(pady=(0, 10))
+    
+    # GitHub link
+    github_label = tk.Label(content_frame, text="github.com/jackworthen/port-checker-plus",
+                           font=("Segoe UI", 9), bg="#ffffff", fg="#3498db")
+    github_label.pack(pady=(0, 30))
+    
+    # OK button
+    ok_button = tk.Button(content_frame, text="OK", font=("Segoe UI", 10, "bold"),
+                         command=about_win.destroy, bg="#3498db", fg="white",
+                         activebackground="#2980b9", relief="flat", padx=30, pady=8)
+    ok_button.pack()
+    
+    # Focus on the OK button and bind Enter key
+    ok_button.focus_set()
+    about_win.bind('<Return>', lambda e: about_win.destroy())
+    about_win.bind('<Escape>', lambda e: about_win.destroy())
 
 def get_export_file_path(config, auto_export=False):
     """Get the export file path with appropriate extension"""
