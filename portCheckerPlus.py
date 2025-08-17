@@ -2455,6 +2455,9 @@ def open_settings_window(root, config, initial_tab="Defaults"):
                 
                 # Update export button visibility based on auto export setting
                 update_export_button_visibility()
+                
+                # Clear previous scan results when settings are saved
+                clear_results_tree()
 
             settings_win.destroy()
             
